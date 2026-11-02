@@ -209,7 +209,7 @@ function rendre() {
     const ouvert = ouverts.has(g.cle) || !!q || filtre !== "tous";
     return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
       <div class="etab-head"><span class="chev">▶</span>
-        <div class="etab-name"><b>${esc(g.nom)}</b><span>${tot} formation${pl(tot)}${tot - ps - pub ? " · " + (tot - ps - pub) + " en cours" : ""}</span></div>
+        <div class="etab-name"><b>${esc(g.nom)}</b> <button class="btn-lien" data-renom-etab="${esc(g.nom)}" title="Renommer l'établissement">✎ renommer</button><span>${tot} formation${pl(tot)}${tot - ps - pub ? " · " + (tot - ps - pub) + " en cours" : ""}</span></div>
         <div><div class="progress">${seg(pub + ps, "var(--green)")}${seg(att, "#9fd8b0")}${seg(sai, "#f5a000")}${seg(rel, "var(--red)")}</div>
           <div class="progress-label">${pub + ps} / ${tot} terminée${pl(pub + ps)}</div></div>
         <div class="tags">${tags}</div></div>
@@ -275,6 +275,7 @@ function ligneFormation(f) {
   const outils = [
     f.cat_ !== "parcoursup" && f.cat_ !== "publie" ? `<button class="btn-lien" data-lien="${r.id}">Copier le lien de la fiche</button>` : "",
     f.fiche ? `<button class="btn-lien" data-fiche="${r.id}"><b>Voir la fiche</b></button>` : "",
+    `<button class="btn-lien" data-renom="${r.id}">Renommer</button>`,
     `<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "Commentaire" : "+ Commentaire"}</button>`,
     `<button class="btn-lien rouge" data-suppr="${r.id}">Supprimer</button>`].join("");
   return `<div class="form" data-id="${r.id}">
@@ -304,6 +305,21 @@ function brancher(zone) {
     await actions([["RemoveRecord", "Suivi", id]]); await charger();
   }));
   zone.querySelectorAll("[data-ajout]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); ouvrirAjout(b.dataset.ajout); }));
+  zone.querySelectorAll("[data-renom-etab]").forEach(b => b.addEventListener("click", async ev => {
+    ev.stopPropagation();
+    const ancien = b.dataset.renomEtab;
+    const nouveau = (prompt("Nouveau nom de l'établissement :", ancien) || "").trim();
+    if (!nouveau || nouveau === ancien) return;
+    const ids = ROWS.filter(r => norm(r.Etablissement) === norm(ancien)).map(r => r.id);
+    if (ouverts.has(norm(ancien))) ouverts.add(norm(nouveau));
+    await bulkMaj(ids, { Etablissement: nouveau });
+  }));
+  zone.querySelectorAll("[data-renom]").forEach(b => b.addEventListener("click", async ev => {
+    ev.stopPropagation();
+    const id = Number(b.dataset.renom), r = ROWS.find(x => x.id === id);
+    const nouveau = (prompt("Nouvel intitulé de la formation :", r.Formation || "") || "").trim();
+    if (nouveau && nouveau !== r.Formation) await maj(id, { Formation: nouveau });
+  }));
   zone.querySelectorAll("[data-mail]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); preparerMail(b.dataset.mail, null, b); }));
   zone.querySelectorAll("[data-fiche]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); voirFiche(Number(b.dataset.fiche)); }));
   zone.querySelectorAll("[data-lien]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); copierLien(b, Number(b.dataset.lien)); }));
