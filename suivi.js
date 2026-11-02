@@ -209,7 +209,8 @@ function rendre() {
     const ouvert = ouverts.has(g.cle) || !!q || filtre !== "tous";
     return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
       <div class="etab-head"><span class="chev">▶</span>
-        <div class="etab-name"><b>${esc(g.nom)}</b> <button class="btn-lien" data-renom-etab="${esc(g.nom)}" title="Renommer l'établissement">✎ renommer</button><span>${tot} formation${pl(tot)}${tot - ps - pub ? " · " + (tot - ps - pub) + " en cours" : ""}</span></div>
+        <div class="etab-name"><b>${esc(g.nom)}</b> <button class="btn-lien" data-renom-etab="${esc(g.nom)}" title="Renommer l'établissement">✎ renommer</button><span>${tot} formation${pl(tot)}${tot - ps - pub ? " · " + (tot - ps - pub) + " en cours" : ""}</span>
+          <span class="contact">${contactHtml(contactDe(g.nom))} <button class="btn-lien" data-contact="${esc(g.nom)}">✎ contact</button></span></div>
         <div><div class="progress">${seg(pub + ps, "var(--green)")}${seg(att, "#9fd8b0")}${seg(sai, "#f5a000")}${seg(rel, "var(--red)")}</div>
           <div class="progress-label">${pub + ps} / ${tot} terminée${pl(pub + ps)}</div></div>
         <div class="tags">${tags}</div></div>
@@ -242,7 +243,8 @@ function panneaux(groupes, relances) {
   const taches = groupes.flatMap(g => g.formations.filter(f => f.cat_ === "saio").map(f => ({ etab: g.nom, f })));
   pan.innerHTML = `
     <section class="panneau"><h2>À relancer <span class="compte ${act.length ? "ko" : "ok"}">${act.length} établissement${act.length > 1 ? "s" : ""}</span></h2>
-      ${act.length ? `<div class="cartes">${act.map(e => `<div class="carte"><div class="carte-tete"><b>${esc(e.nom)}</b>
+      ${act.length ? `<div class="cartes">${act.map(e => `<div class="carte"><div class="carte-tete"><div><b>${esc(e.nom)}</b>
+          <div class="contact">${contactHtml(contactDe(e.nom), '<i>contact non renseigné</i>')}</div></div>
           <button class="btn petit" data-relance="${e.ids.join(",")}">Relancé aujourd'hui</button></div>
           <ul>${e.lignes.map(l => `<li><b>${esc(l.formation)}</b> — ${esc(l.motif)}</li>`).join("")}</ul></div>`).join("")}</div>`
         : `<p class="rien">Personne à relancer pour le moment.</p>`}
@@ -305,6 +307,8 @@ function brancher(zone) {
     await actions([["RemoveRecord", "Suivi", id]]); await charger();
   }));
   zone.querySelectorAll("[data-ajout]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); ouvrirAjout(b.dataset.ajout); }));
+  zone.querySelectorAll("[data-contact]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); editerContact(b.dataset.contact, b); }));
+  zone.querySelectorAll(".contact a").forEach(a => a.addEventListener("click", ev => ev.stopPropagation()));
   zone.querySelectorAll("[data-renom-etab]").forEach(b => b.addEventListener("click", async ev => {
     ev.stopPropagation();
     const ancien = b.dataset.renomEtab;
@@ -394,9 +398,21 @@ function ouvrirAjout(etab) {
     <label>Formations demandées <small>(une par ligne)</small><textarea id="aj-forms" rows="4" placeholder="BTS NDRC&#10;BTS MCO"></textarea></label>
     <label>Lieu / campus <small>(facultatif)</small><input id="aj-lieu"></label>
     <label>Mail reçu le <input type="date" id="aj-date" value="${versInput(aujourdhui())}"></label>
+    <fieldset class="contact-saisie"><legend>Contact de l'établissement <small>(repris automatiquement s'il est déjà connu)</small></legend>
+      <label>Nom (et fonction) <input id="aj-cnom" placeholder="M. Dupont, directeur"></label>
+      <label>Téléphone <input id="aj-ctel"></label>
+      <label>Mail <input id="aj-cmail" type="email"></label></fieldset>
     <div class="pop-btns"><button class="btn" id="aj-ok">Ajouter</button><button class="btn gris" id="aj-annul">Annuler</button></div>`;
   placer(pop, null);
   const champ = document.getElementById(etab ? "aj-forms" : "aj-etab"); if (champ) champ.focus();
+  const remplirContact = () => {
+    const el = document.getElementById("aj-etab"), c = contactDe(el ? el.value : "");
+    for (const [id, v] of [["aj-cnom", c.nom], ["aj-ctel", c.tel], ["aj-cmail", c.email]]) {
+      const f = document.getElementById(id); if (f && !f.value) f.value = v;
+    }
+  };
+  remplirContact();
+  const etEl = document.getElementById("aj-etab"); if (etEl) etEl.addEventListener("change", remplirContact);
   const annul = document.getElementById("aj-annul"); if (annul) annul.addEventListener("click", fermerPop);
   const ok = document.getElementById("aj-ok");
   if (ok) ok.addEventListener("click", async () => {
@@ -404,8 +420,48 @@ function ouvrirAjout(etab) {
     const e = v("aj-etab").trim(), forms = v("aj-forms").split(/\n|;/).map(x => x.trim()).filter(Boolean);
     if (!e || !forms.length) { alert("Indiquez l'établissement et au moins une formation."); return; }
     const lieu = v("aj-lieu").trim(), date = depuisInput(v("aj-date")) || aujourdhui();
+    const contact = { Contact_nom: v("aj-cnom").trim() || null, Contact_tel: v("aj-ctel").trim() || null, Contact_email: v("aj-cmail").trim() || null };
     fermerPop(); ouverts.add(norm(e));
-    await ajouter(forms.map(f => ({ Etablissement: e, Formation: f, Lieu: lieu || null, Mail_recu: date })));
+    const existants = ROWS.filter(r => norm(r.Etablissement) === norm(e)).map(r => r.id);
+    if (existants.length && (contact.Contact_nom || contact.Contact_tel || contact.Contact_email)) await bulkMaj(existants, contact);
+    await ajouter(forms.map(f => ({ Etablissement: e, Formation: f, Lieu: lieu || null, Mail_recu: date, ...contact })));
+  });
+}
+
+// Contact d'un établissement (repris de n'importe laquelle de ses lignes)
+function contactDe(etab) {
+  const k = norm(etab), c = { nom: "", tel: "", email: "" };
+  for (const r of ROWS) {
+    if (norm(r.Etablissement) !== k) continue;
+    c.nom = c.nom || r.Contact_nom || ""; c.tel = c.tel || r.Contact_tel || ""; c.email = c.email || r.Contact_email || "";
+  }
+  return c;
+}
+function contactHtml(c, vide) {
+  const p = [];
+  if (c.nom) p.push("👤 " + esc(c.nom));
+  if (c.tel) p.push(`☎ <a href="tel:${esc(c.tel.replace(/\s/g, ""))}">${esc(c.tel)}</a>`);
+  if (c.email) p.push(`✉ <a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`);
+  return p.length ? p.join(" · ") : (vide || "");
+}
+
+function editerContact(etab, ancre) {
+  const c = contactDe(etab);
+  const pop = nouvellePop("pop-large");
+  pop.innerHTML = `<b>Contact — ${esc(etab)}</b>
+    <label>Nom (et fonction) <input id="c-nom" value="${esc(c.nom)}" placeholder="M. Dupont, directeur"></label>
+    <label>Téléphone <input id="c-tel" value="${esc(c.tel)}" placeholder="05 56 00 00 00"></label>
+    <label>Mail <input id="c-mail" type="email" value="${esc(c.email)}" placeholder="contact@etablissement.fr"></label>
+    <div class="pop-btns"><button class="btn" id="c-ok">Enregistrer</button><button class="btn gris" id="c-annul">Annuler</button></div>`;
+  placer(pop, ancre);
+  const an = document.getElementById("c-annul"); if (an) an.addEventListener("click", fermerPop);
+  const ok = document.getElementById("c-ok");
+  if (ok) ok.addEventListener("click", async () => {
+    const v = id => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
+    const ids = ROWS.filter(r => norm(r.Etablissement) === norm(etab)).map(r => r.id);
+    const champs = { Contact_nom: v("c-nom") || null, Contact_tel: v("c-tel") || null, Contact_email: v("c-mail") || null };
+    fermerPop();
+    await bulkMaj(ids, champs);
   });
 }
 
@@ -414,7 +470,7 @@ function preparerMail(etab, idsChoisis, ancre) {
   const k = norm(etab);
   const candidats = ROWS.filter(r => norm(r.Etablissement) === k && !r.Lien_envoye && !ficheDe(r) && !(r.Origine && !r.Mail_recu) && r.Publiee !== "Publiée");
   const choisis = new Set(idsChoisis && idsChoisis.length ? idsChoisis : candidats.map(r => r.id));
-  const email = (ROWS.find(r => norm(r.Etablissement) === k && r.Contact_email) || {}).Contact_email || "";
+  const email = contactDe(etab).email;
   const pop = nouvellePop("pop-large");
   if (!DEMO && !PARAM.URL_formulaire) {
     pop.innerHTML = `<b>Envoyer la fiche — ${esc(etab)}</b><p class="rien">Le formulaire n'est pas encore publié : page « Formulaire fiche » → Publier,
@@ -620,9 +676,11 @@ async function charger() {
   try {
     const [s, f, c, p] = await Promise.all(["Suivi", "Fiches", "Catalogue", "Parametres"].map(t => grist.docApi.fetchTable(t).catch(() => null)));
     if (!s) throw new Error("table « Suivi » introuvable ou accès refusé");
-    if (!("Contact_email" in s)) {
-      await grist.docApi.applyUserActions([["AddColumn", "Suivi", "Contact_email", { type: "Text", label: "Email de contact", isFormula: false }]]);
-      s.Contact_email = s.id.map(() => null);
+    const manquantes = [["Contact_nom", "Contact (nom)"], ["Contact_tel", "Contact (téléphone)"], ["Contact_email", "Contact (mail)"]]
+      .filter(([c]) => !(c in s));
+    if (manquantes.length) {
+      await grist.docApi.applyUserActions(manquantes.map(([c, l]) => ["AddColumn", "Suivi", c, { type: "Text", label: l, isFormula: false }]));
+      for (const [c] of manquantes) s[c] = s.id.map(() => null);
     }
     ROWS = lignes(s); FICHES = lignes(f); CATALOGUE = lignes(c); PARAM = lignes(p)[0] || {}; INDEX = null; DEMO = false;
   } catch (e) {
@@ -638,7 +696,7 @@ function demo() {
   DEMO = true;
   const j = s => Date.UTC(2026, Number(s.slice(3, 5)) - 1, Number(s.slice(0, 2))) / 1000;
   ROWS = [
-    { id: 1, Code: "F-0001", Etablissement: "TALIS", Formation: "BTS MCO", Lieu: "TALIS Bordeaux", Mail_recu: j("10/10"), Lien_envoye: j("12/10"), UAI: "Conforme", RNCP: "Conforme", Publiee: "Publiée", Publiee_le: j("28/10") },
+    { id: 1, Code: "F-0001", Etablissement: "TALIS", Contact_nom: "Mme Martin, directrice", Contact_tel: "05 56 00 00 00", Contact_email: "s.martin@talis.fr", Formation: "BTS MCO", Lieu: "TALIS Bordeaux", Mail_recu: j("10/10"), Lien_envoye: j("12/10"), UAI: "Conforme", RNCP: "Conforme", Publiee: "Publiée", Publiee_le: j("28/10") },
     { id: 2, Code: "F-0002", Etablissement: "TALIS", Formation: "BTS Communication", Lieu: "TALIS Bordeaux", Mail_recu: j("10/10"), Lien_envoye: j("12/10") },
     { id: 3, Code: "F-0003", Etablissement: "TALIS", Formation: "BTS NDRC", Lieu: "TALIS Bordeaux", Mail_recu: j("10/10"), Lien_envoye: j("12/10") },
     { id: 4, Code: "F-0004", Etablissement: "CAMPUS DU LAC", Formation: "BTS GPME", Mail_recu: j("29/10") },

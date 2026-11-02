@@ -6,7 +6,7 @@
 <title>Suivi des référencements</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js" defer></script>
 <script src="lib/xlsx.full.min.js" defer></script>
-<script src="suivi.js?v=8" defer></script>
+<script src="suivi.js?v=9" defer></script>
 <style>
   :root {
     --bg: #f6f6f6; --card: #ffffff; --text: #1e1e1e; --muted: #666; --line: #e5e5e5;
@@ -115,6 +115,10 @@
   @media (max-width: 900px) { .fiche-grille { grid-template-columns: 1fr; } }
   .case { display: flex !important; flex-direction: row !important; align-items: center; gap: 8px; font-size: 13px; margin: 4px 0; }
   .etab-name .btn-lien { font-size: 11px; margin-left: 6px; opacity: .7; }
+  .contact { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .contact a { color: var(--blue); }
+  .contact-saisie { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .contact-saisie legend { font-size: 12px; color: var(--muted); }
   .empty { text-align: center; color: var(--muted); padding: 40px; }
   @media (max-width: 900px) {
     .etab-head { grid-template-columns: 22px 1fr; }
