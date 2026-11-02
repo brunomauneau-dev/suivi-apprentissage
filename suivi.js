@@ -214,7 +214,9 @@ function rendre() {
           <div class="progress-label">${pub + ps} / ${tot} terminée${pl(pub + ps)}</div></div>
         <div class="tags">${tags}</div></div>
       <div class="forms">${fs.map(ligneFormation).join("")}
-        <div class="ajout-ligne"><button class="btn-lien" data-ajout="${esc(g.nom)}">+ Ajouter une formation pour ${esc(g.nom)}</button></div></div>
+        <div class="ajout-ligne">${(() => { const n = g.formations.filter(f => !f.r.Lien_envoye && !f.fiche && f.cat_ !== "parcoursup" && f.cat_ !== "publie").length;
+          return n ? `<button class="btn petit" data-mail="${esc(g.nom)}">✉ Envoyer ${n > 1 ? "les " + n + " fiches" : "la fiche"} par mail</button> &nbsp; ` : ""; })()}
+          <button class="btn-lien" data-ajout="${esc(g.nom)}">+ Ajouter une formation pour ${esc(g.nom)}</button></div></div>
     </section>`;
   }).join("");
   zone.innerHTML = html || `<div class="empty">${ROWS.length ? "Aucune formation ne correspond." : "Aucune formation suivie. Cliquez sur « + Nouvelle demande »."}</div>`;
@@ -302,6 +304,7 @@ function brancher(zone) {
     await actions([["RemoveRecord", "Suivi", id]]); await charger();
   }));
   zone.querySelectorAll("[data-ajout]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); ouvrirAjout(b.dataset.ajout); }));
+  zone.querySelectorAll("[data-mail]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); preparerMail(b.dataset.mail, null, b); }));
   zone.querySelectorAll("[data-fiche]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); voirFiche(Number(b.dataset.fiche)); }));
   zone.querySelectorAll("[data-lien]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); copierLien(b, Number(b.dataset.lien)); }));
 }
@@ -341,6 +344,7 @@ function ouvrirEtape(bouton, id, i) {
     placer(pop, bouton);
     return;
   }
+  if (et.col === "Lien_envoye" && !r.Lien_envoye) { preparerMail(r.Etablissement, [id], bouton); return; }
   const effacer = r[et.col] ? `<button class="btn gris" data-v="vide">Effacer</button>` : "";
   let corps;
   if (et.type === "date") {
@@ -387,6 +391,65 @@ function ouvrirAjout(etab) {
     fermerPop(); ouverts.add(norm(e));
     await ajouter(forms.map(f => ({ Etablissement: e, Formation: f, Lieu: lieu || null, Mail_recu: date })));
   });
+}
+
+// Prépare dans la messagerie (Thunderbird…) le mail avec les liens des fiches, puis coche « Lien envoyé »
+function preparerMail(etab, idsChoisis, ancre) {
+  const k = norm(etab);
+  const candidats = ROWS.filter(r => norm(r.Etablissement) === k && !r.Lien_envoye && !ficheDe(r) && !(r.Origine && !r.Mail_recu) && r.Publiee !== "Publiée");
+  const choisis = new Set(idsChoisis && idsChoisis.length ? idsChoisis : candidats.map(r => r.id));
+  const email = (ROWS.find(r => norm(r.Etablissement) === k && r.Contact_email) || {}).Contact_email || "";
+  const pop = nouvellePop("pop-large");
+  if (!DEMO && !PARAM.URL_formulaire) {
+    pop.innerHTML = `<b>Envoyer la fiche — ${esc(etab)}</b><p class="rien">Le formulaire n'est pas encore publié : page « Formulaire fiche » → Publier,
+      puis collez son adresse dans la page « Paramètres ». Les liens pré-remplis pourront alors être envoyés.</p>
+      <div class="pop-btns"><button class="btn gris" id="m-date">J'ai déjà envoyé le lien autrement : noter la date</button></div>`;
+    placer(pop, ancre);
+    const d = document.getElementById("m-date");
+    if (d) d.addEventListener("click", async () => { fermerPop(); await bulkMaj([...choisis], { Lien_envoye: aujourdhui() }); });
+    return;
+  }
+  pop.innerHTML = `<b>Envoyer la fiche de renseignement — ${esc(etab)}</b>
+    <label>Adresse mail de l'établissement <input id="m-email" type="email" value="${esc(email)}" placeholder="contact@etablissement.fr"></label>
+    <div><span class="rien">Formations à inclure (une fiche par formation, déjà pré-remplie) :</span>
+      ${candidats.map(r => `<label class="case"><input type="checkbox" value="${r.id}" ${choisis.has(r.id) ? "checked" : ""}> ${esc(r.Formation)}</label>`).join("")}</div>
+    <div class="pop-btns"><button class="btn" id="m-ok">✉ Préparer le mail</button><button class="btn gris" id="m-date">Déjà envoyé autrement : noter la date</button></div>
+    <p class="rien">Le mail s'ouvre dans votre messagerie, prêt à partir : relisez-le et cliquez « Envoyer ». L'étape « Lien envoyé » est cochée à aujourd'hui.</p>`;
+  placer(pop, ancre);
+  const ids = () => [...pop.querySelectorAll("input[type=checkbox]:checked")].map(x => Number(x.value));
+  const ok = document.getElementById("m-ok"), dt = document.getElementById("m-date");
+  if (dt) dt.addEventListener("click", async () => { const l = ids(); fermerPop(); if (l.length) await bulkMaj(l, { Lien_envoye: aujourdhui() }); });
+  if (ok) ok.addEventListener("click", async () => {
+    const l = ids(), el = document.getElementById("m-email"), adr = el ? el.value.trim() : "";
+    if (!l.length) { alert("Cochez au moins une formation."); return; }
+    const rows = l.map(id => ROWS.find(r => r.id === id));
+    const lien = r => r.Lien_fiche || (PARAM.URL_formulaire || "") + "?Code=" + encodeURIComponent(r.Code || "");
+    const objet = `Référencement Parcoursup en apprentissage - fiche de renseignement - ${etab}`;
+    const corps = `Bonjour,
+
+Pour donner suite à votre demande de référencement sur Parcoursup, merci de compléter la fiche de renseignement en ligne, une fiche par formation, en utilisant les liens ci-dessous (le nom de l'établissement et la formation sont déjà renseignés) :
+
+${rows.map(r => "- " + r.Formation + " :\n  " + lien(r)).join("\n\n")}
+
+Nous restons à votre disposition pour toute question.
+
+Cordialement,
+SAIO - Académie de Bordeaux`;
+    const a = document.createElement("a");
+    a.href = "mailto:" + encodeURIComponent(adr) + "?subject=" + encodeURIComponent(objet) + "&body=" + encodeURIComponent(corps);
+    a.target = "_blank"; a.rel = "noopener";
+    document.body.appendChild(a); a.click(); a.remove();
+    fermerPop();
+    await bulkMaj(l, { Lien_envoye: aujourdhui(), ...(adr ? { Contact_email: adr } : {}) });
+  });
+}
+
+async function bulkMaj(ids, champs) {
+  if (DEMO) { ROWS.forEach(r => { if (ids.includes(r.id)) Object.assign(r, champs); }); rendre(); return; }
+  const cols = {};
+  for (const k of Object.keys(champs)) cols[k] = ids.map(() => champs[k]);
+  await actions([["BulkUpdateRecord", "Suivi", ids, cols]]);
+  await charger();
 }
 
 async function copierLien(bouton, id) {
@@ -541,6 +604,10 @@ async function charger() {
   try {
     const [s, f, c, p] = await Promise.all(["Suivi", "Fiches", "Catalogue", "Parametres"].map(t => grist.docApi.fetchTable(t).catch(() => null)));
     if (!s) throw new Error("table « Suivi » introuvable ou accès refusé");
+    if (!("Contact_email" in s)) {
+      await grist.docApi.applyUserActions([["AddColumn", "Suivi", "Contact_email", { type: "Text", label: "Email de contact", isFormula: false }]]);
+      s.Contact_email = s.id.map(() => null);
+    }
     ROWS = lignes(s); FICHES = lignes(f); CATALOGUE = lignes(c); PARAM = lignes(p)[0] || {}; INDEX = null; DEMO = false;
   } catch (e) {
     const ban = document.getElementById("bandeaux");
