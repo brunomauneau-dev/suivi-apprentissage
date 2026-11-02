@@ -106,8 +106,12 @@ function analyser(r, maintenant) {
   if (r.Origine && !r.Mail_recu && !fiche) return { ...base, e: ETAPES.map(() => etat("done")), cat_: "parcoursup",
     next: { cls: "ok", titre: "Terminé", txt: "Déjà ouverte sur Parcoursup" + (r.g_ta_cod ? " (n° " + r.g_ta_cod + ")" : "") } };
   if (r.Publiee === "Publiée") return { ...base, cat_: "publie", next: { cls: "ok", titre: "Terminé", txt: "Publiée au catalogue national" } };
-  if (e[3].s === "ko") return { ...base, cat_: "relance", next: { cls: "ko", titre: "À corriger par l'établissement", txt: "UAI" + (r.Commentaire ? " — " + r.Commentaire : "") } };
-  if (e[4].s === "ko") return { ...base, cat_: "relance", next: { cls: "ko", titre: "À corriger par l'établissement", txt: "RNCP" + (r.Commentaire ? " — " + r.Commentaire : "") } };
+  if (e[3].s === "ko" || e[4].s === "ko") {
+    const parts = [];
+    if (e[3].s === "ko") parts.push("UAI" + (r.Motif_UAI ? " : " + r.Motif_UAI : ""));
+    if (e[4].s === "ko") parts.push("RNCP" + (r.Motif_RNCP ? " : " + r.Motif_RNCP : ""));
+    return { ...base, cat_: "relance", next: { cls: "ko", titre: "À corriger par l'établissement", txt: parts.join(" · ") } };
+  }
   if (!r.Lien_envoye && !ficheDate) return { ...base, cat_: "saio", next: { cls: "ko", titre: "À faire au SAIO", txt: "Envoyer le lien de la fiche" } };
   if (!ficheDate) {
     const j = Math.floor((maintenant - r.Lien_envoye) / JOUR);
@@ -283,7 +287,7 @@ function ligneFormation(f) {
     <div class="steps">${steps}</div>
     <div class="next ${f.next.cls}"><b>${esc(f.next.titre)}</b>${esc(f.next.txt)}
       <div class="outils">${outils}</div>
-      ${r.Commentaire && !/corriger/.test(f.next.titre) ? `<div class="com">${esc(r.Commentaire)}</div>` : ""}</div>
+      ${r.Commentaire ? `<div class="com">${esc(r.Commentaire)}</div>` : ""}</div>
   </div>`;
 }
 
@@ -381,7 +385,11 @@ function ouvrirEtape(bouton, id, i) {
     if (v === "vide") { champs[et.col] = null; if (et.type === "pub") champs.Publiee_le = null; }
     else if (et.type === "date") { const d = document.getElementById("pop-date"); champs[et.col] = (d && depuisInput(d.value)) || aujourdhui(); }
     else { champs[et.col] = v; if (et.type === "pub") champs.Publiee_le = aujourdhui(); }
-    if (v === "À corriger") { const t = prompt("Que faut-il corriger ?", r.Commentaire || ""); if (t !== null && t.trim()) champs.Commentaire = t.trim(); }
+    if (et.type === "verif") {
+      const motif = "Motif_" + et.col;
+      if (v === "À corriger") { const t = prompt(`Que faut-il corriger pour le ${et.nom} ?`, r[motif] || ""); if (t !== null) champs[motif] = t.trim() || null; }
+      else champs[motif] = null;
+    }
     fermerPop();
     await maj(id, champs);
   }));
@@ -596,8 +604,9 @@ function voirFiche(id) {
   placer(pop, null);
   const fer = document.getElementById("pop-fermer"); if (fer) fer.addEventListener("click", fermerPop);
   pop.querySelectorAll("[data-v]").forEach(b => b.addEventListener("click", async () => {
-    const [col, v] = b.dataset.v.split("|"), champs = { [col]: v };
-    if (v === "À corriger") { const t = prompt("Que faut-il corriger ?", r.Commentaire || ""); if (t !== null && t.trim()) champs.Commentaire = t.trim(); }
+    const [col, v] = b.dataset.v.split("|"), champs = { [col]: v }, motif = "Motif_" + col;
+    if (v === "À corriger") { const t = prompt(`Que faut-il corriger pour le ${col} ?`, r[motif] || ""); if (t !== null) champs[motif] = t.trim() || null; }
+    else champs[motif] = null;
     await maj(id, champs);
     voirFiche(id);
   }));
@@ -674,7 +683,8 @@ async function charger() {
   try {
     const [s, f, c, p] = await Promise.all(["Suivi", "Fiches", "Catalogue", "Parametres"].map(t => grist.docApi.fetchTable(t).catch(() => null)));
     if (!s) throw new Error("table « Suivi » introuvable ou accès refusé");
-    const manquantes = [["Contact_nom", "Contact (nom)"], ["Contact_tel", "Contact (téléphone)"], ["Contact_email", "Contact (mail)"]]
+    const manquantes = [["Contact_nom", "Contact (nom)"], ["Contact_tel", "Contact (téléphone)"], ["Contact_email", "Contact (mail)"],
+      ["Motif_UAI", "Correction UAI demandée"], ["Motif_RNCP", "Correction RNCP demandée"]]
       .filter(([c]) => !(c in s));
     if (manquantes.length) {
       await grist.docApi.applyUserActions(manquantes.map(([c, l]) => ["AddColumn", "Suivi", c, { type: "Text", label: l, isFormula: false }]));
