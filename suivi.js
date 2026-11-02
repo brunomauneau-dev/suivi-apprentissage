@@ -275,13 +275,11 @@ function ligneFormation(f) {
   if (r.Lieu) sous.push(esc(r.Lieu));
   if (r.Lien_Parcoursup) sous.push(`<a href="${esc(r.Lien_Parcoursup)}" target="_blank" rel="noopener">fiche Parcoursup</a>`);
   const outils = [
-    f.cat_ !== "parcoursup" && f.cat_ !== "publie" ? `<button class="btn-lien" data-lien="${r.id}">Copier le lien de la fiche</button>` : "",
-    f.fiche ? `<button class="btn-lien" data-fiche="${r.id}"><b>Voir la fiche</b></button>` : "",
-    `<button class="btn-lien" data-renom="${r.id}">Renommer</button>`,
-    `<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "Commentaire" : "+ Commentaire"}</button>`,
-    `<button class="btn-lien rouge" data-suppr="${r.id}">Supprimer</button>`].join("");
+    f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
+    `<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "Commentaire" : "+ Commentaire"}</button>`].join("");
   return `<div class="form" data-id="${r.id}">
-    <div class="form-name"><b>${esc(r.Formation || "(sans intitulé)")}</b><span>${sous.join(" · ")}</span></div>
+    <div class="form-name"><b>${esc(r.Formation || "(sans intitulé)")}</b><span>${sous.join(" · ")}</span>
+      <span class="gestion"><button class="btn-lien" data-renom="${r.id}">renommer</button> · <button class="btn-lien rouge" data-suppr="${r.id}">supprimer</button></span></div>
     <div class="steps">${steps}</div>
     <div class="next ${f.next.cls}"><b>${esc(f.next.titre)}</b>${esc(f.next.txt)}
       <div class="outils">${outils}</div>
