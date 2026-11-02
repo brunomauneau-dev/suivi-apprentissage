@@ -107,10 +107,8 @@ function analyser(r, maintenant) {
     next: { cls: "ok", titre: "Terminé", txt: "Déjà ouverte sur Parcoursup" + (r.g_ta_cod ? " (n° " + r.g_ta_cod + ")" : "") } };
   if (r.Publiee === "Publiée") return { ...base, cat_: "publie", next: { cls: "ok", titre: "Terminé", txt: "Publiée au catalogue national" } };
   if (e[3].s === "ko" || e[4].s === "ko") {
-    const parts = [];
-    if (e[3].s === "ko") parts.push("UAI" + (r.Motif_UAI ? " : " + r.Motif_UAI : ""));
-    if (e[4].s === "ko") parts.push("RNCP" + (r.Motif_RNCP ? " : " + r.Motif_RNCP : ""));
-    return { ...base, cat_: "relance", next: { cls: "ko", titre: "À corriger par l'établissement", txt: parts.join(" · ") } };
+    const statut = v => v === "Conforme" ? "conforme" : v === "À corriger" ? "à corriger" : "à vérifier";
+    return { ...base, cat_: "relance", next: { cls: "ko", titre: "À corriger par l'établissement", txt: `UAI : ${statut(r.UAI)} · RNCP : ${statut(r.RNCP)}` } };
   }
   if (!r.Lien_envoye && !ficheDate) return { ...base, cat_: "saio", next: { cls: "ko", titre: "À faire au SAIO", txt: "Envoyer le lien de la fiche" } };
   if (!ficheDate) {
@@ -214,7 +212,9 @@ function rendre() {
     return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
       <div class="etab-head"><span class="chev">▶</span>
         <div class="etab-name"><b>${esc(g.nom)}</b> <button class="btn-lien" data-renom-etab="${esc(g.nom)}" title="Renommer l'établissement">✎ renommer</button><span>${tot} formation${pl(tot)}${tot - ps - pub ? " · " + (tot - ps - pub) + " en cours" : ""}</span>
-          <span class="contact">${contactHtml(contactDe(g.nom))} <button class="btn-lien" data-contact="${esc(g.nom)}">✎ contact</button></span></div>
+          <span class="contact">${contactHtml(contactDe(g.nom))} <button class="btn-lien" data-contact="${esc(g.nom)}">✎ contact</button>
+            ${tot - ps ? `· <button class="btn-lien" data-commentaire="${esc(g.nom)}">✎ commentaire</button>` : ""}</span>
+          ${commentaireDe(g.nom) ? `<span class="com-demande">💬 ${esc(commentaireDe(g.nom))}</span>` : ""}</div>
         <div><div class="progress">${seg(pub + ps, "var(--green)")}${seg(att, "#9fd8b0")}${seg(sai, "#f5a000")}${seg(rel, "var(--red)")}</div>
           <div class="progress-label">${pub + ps} / ${tot} terminée${pl(pub + ps)}</div></div>
         <div class="tags">${tags}</div></div>
@@ -248,7 +248,8 @@ function panneaux(groupes, relances) {
   pan.innerHTML = `
     <section class="panneau"><h2>À relancer <span class="compte ${act.length ? "ko" : "ok"}">${act.length} établissement${act.length > 1 ? "s" : ""}</span></h2>
       ${act.length ? `<div class="cartes">${act.map(e => `<div class="carte"><div class="carte-tete"><div><b>${esc(e.nom)}</b>
-          <div class="contact">${contactHtml(contactDe(e.nom), '<i>contact non renseigné</i>')}</div></div>
+          <div class="contact">${contactHtml(contactDe(e.nom), '<i>contact non renseigné</i>')}</div>
+          ${commentaireDe(e.nom) ? `<div class="com-demande">💬 ${esc(commentaireDe(e.nom))}</div>` : ""}</div>
           <button class="btn petit" data-relance="${e.ids.join(",")}">Relancé aujourd'hui</button></div>
           <ul>${e.lignes.map(l => `<li><b>${esc(l.formation)}</b> — ${esc(l.motif)}</li>`).join("")}</ul></div>`).join("")}</div>`
         : `<p class="rien">Personne à relancer pour le moment.</p>`}
@@ -278,16 +279,14 @@ function ligneFormation(f) {
   const sous = [];
   if (r.Lieu) sous.push(esc(r.Lieu));
   if (r.Lien_Parcoursup) sous.push(`<a href="${esc(r.Lien_Parcoursup)}" target="_blank" rel="noopener">fiche Parcoursup</a>`);
-  const outils = [
-    f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
-    `<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "Commentaire" : "+ Commentaire"}</button>`].join("");
+  const outils = f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "";
   return `<div class="form" data-id="${r.id}">
     <div class="form-name"><b>${esc(r.Formation || "(sans intitulé)")}</b><span>${sous.join(" · ")}</span>
       <span class="gestion"><button class="btn-lien" data-renom="${r.id}">renommer</button> · <button class="btn-lien rouge" data-suppr="${r.id}">supprimer</button></span></div>
     <div class="steps">${steps}</div>
     <div class="next ${f.next.cls}"><b>${esc(f.next.titre)}</b>${esc(f.next.txt)}
       <div class="outils">${outils}</div>
-      ${r.Commentaire ? `<div class="com">${esc(r.Commentaire)}</div>` : ""}</div>
+</div>
   </div>`;
 }
 
@@ -309,6 +308,7 @@ function brancher(zone) {
     await actions([["RemoveRecord", "Suivi", id]]); await charger();
   }));
   zone.querySelectorAll("[data-ajout]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); ouvrirAjout(b.dataset.ajout); }));
+  zone.querySelectorAll("[data-commentaire]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); editerCommentaire(b.dataset.commentaire, b); }));
   zone.querySelectorAll("[data-contact]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); editerContact(b.dataset.contact, b); }));
   zone.querySelectorAll(".contact a").forEach(a => a.addEventListener("click", ev => ev.stopPropagation()));
   zone.querySelectorAll("[data-renom-etab]").forEach(b => b.addEventListener("click", async ev => {
@@ -385,11 +385,6 @@ function ouvrirEtape(bouton, id, i) {
     if (v === "vide") { champs[et.col] = null; if (et.type === "pub") champs.Publiee_le = null; }
     else if (et.type === "date") { const d = document.getElementById("pop-date"); champs[et.col] = (d && depuisInput(d.value)) || aujourdhui(); }
     else { champs[et.col] = v; if (et.type === "pub") champs.Publiee_le = aujourdhui(); }
-    if (et.type === "verif") {
-      const motif = "Motif_" + et.col;
-      if (v === "À corriger") { const t = prompt(`Que faut-il corriger pour le ${et.nom} ?`, r[motif] || ""); if (t !== null) champs[motif] = t.trim() || null; }
-      else champs[motif] = null;
-    }
     fermerPop();
     await maj(id, champs);
   }));
@@ -443,6 +438,29 @@ function contactDe(etab) {
   }
   return c;
 }
+function commentaireDe(etab) {
+  const k = norm(etab);
+  const r = ROWS.find(x => norm(x.Etablissement) === k && x.Commentaire && !(x.Origine && !x.Mail_recu));
+  return r ? r.Commentaire : "";
+}
+
+function editerCommentaire(etab, ancre) {
+  const pop = nouvellePop("pop-large");
+  pop.innerHTML = `<b>Commentaire sur la demande — ${esc(etab)}</b>
+    <textarea id="com-txt" rows="5">${esc(commentaireDe(etab))}</textarea>
+    <div class="pop-btns"><button class="btn" id="com-ok">Enregistrer</button><button class="btn gris" id="com-annul">Annuler</button></div>`;
+  placer(pop, ancre);
+  const t = document.getElementById("com-txt"); if (t) t.focus();
+  const an = document.getElementById("com-annul"); if (an) an.addEventListener("click", fermerPop);
+  const ok = document.getElementById("com-ok");
+  if (ok) ok.addEventListener("click", async () => {
+    const el = document.getElementById("com-txt"), val = el ? el.value.trim() : "";
+    const ids = ROWS.filter(r => norm(r.Etablissement) === norm(etab) && !(r.Origine && !r.Mail_recu)).map(r => r.id);
+    fermerPop();
+    if (ids.length) await bulkMaj(ids, { Commentaire: val || null });
+  });
+}
+
 function contactHtml(c, vide) {
   const p = [];
   if (c.nom) p.push("👤 " + esc(c.nom));
@@ -604,9 +622,7 @@ function voirFiche(id) {
   placer(pop, null);
   const fer = document.getElementById("pop-fermer"); if (fer) fer.addEventListener("click", fermerPop);
   pop.querySelectorAll("[data-v]").forEach(b => b.addEventListener("click", async () => {
-    const [col, v] = b.dataset.v.split("|"), champs = { [col]: v }, motif = "Motif_" + col;
-    if (v === "À corriger") { const t = prompt(`Que faut-il corriger pour le ${col} ?`, r[motif] || ""); if (t !== null) champs[motif] = t.trim() || null; }
-    else champs[motif] = null;
+    const [col, v] = b.dataset.v.split("|"), champs = { [col]: v };
     await maj(id, champs);
     voirFiche(id);
   }));
