@@ -1,314 +1,333 @@
 // Widget Grist « Suivi des référencements en apprentissage »
-// Lit le document Suivi_formations_apprentissage : Etablissements, Demandes, Fiches, Mails, Parametres, Accueil.
-// Une ligne par formation demandée, regroupées par établissement.
+// Une seule table « Suivi » : une ligne par formation demandée, regroupées par établissement.
+// Tout se fait dans le widget : cliquer sur une étape pour la valider, ajouter des formations, commenter.
 
-const ETAPES = ["Mail reçu", "Lien envoyé", "Fiche reçue", "UAI", "RNCP", "Publiée"];
-
-// Abréviations courantes <-> intitulés, pour rapprocher les formations annoncées dans le mail et les fiches reçues
-const ALIAS = [
-  ["NDRC", "NEGOCIATION ET DIGITALISATION"], ["MCO", "MANAGEMENT COMMERCIAL OPERATIONNEL"],
-  ["GPME", "GESTION DE LA PME"], ["SAM", "SUPPORT A L ACTION MANAGERIALE"], ["CG", "COMPTABILITE ET GESTION"],
-  ["CJN", "COLLABORATEUR JURISTE NOTARIAL"], ["GTLA", "TRANSPORTS ET LOGISTIQUE"],
-  ["SIO", "SERVICES INFORMATIQUES AUX ORGANISATIONS"], ["CIEL", "CYBERSECURITE"], ["MHR", "MANAGEMENT EN HOTELLERIE"],
-  ["MECP", "ESTHETIQUE"], ["PI", "PROFESSIONS IMMOBILIERES"], ["CI", "COMMERCE INTERNATIONAL"],
-  ["COMMUNICATION", "COMMUNICATION"], ["TOURISME", "TOURISME"], ["ASSURANCE", "ASSURANCE"],
+const TABLE = "Suivi";
+const ETAPES = [
+  { col: "Mail_recu", nom: "Mail reçu", type: "date" },
+  { col: "Lien_envoye", nom: "Lien envoyé", type: "date" },
+  { col: "Fiche_recue", nom: "Fiche reçue", type: "date" },
+  { col: "UAI", nom: "UAI", type: "verif" },
+  { col: "RNCP", nom: "RNCP", type: "verif" },
+  { col: "Publiee", nom: "Publiée", type: "pub" },
 ];
+const JOUR = 86400;
 
 // ------------------------------------------------------------------ utilitaires
 
 function norm(s) {
-  return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase()
-    .replace(/[^A-Z0-9]+/g, " ").replace(/\b(EN APPRENTISSAGE|APPRENTISSAGE|SERVICES|PRODUCTION|BTS)\b/g, " ")
-    .replace(/\s+/g, " ").trim();
+  return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
 }
-
-function cles(libelle) {
-  // ensemble de « clés » qui identifient une formation (abréviation + intitulé)
-  const n = norm(libelle);
-  const k = new Set(n ? [n] : []);
-  for (const [abr, long] of ALIAS) {
-    if (new RegExp(`\\b${abr}\\b`).test(n) || n.includes(long)) k.add(abr);
-  }
-  return k;
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
-
-function memeFormation(a, b) {
-  const ka = cles(a), kb = cles(b);
-  for (const x of ka) if (kb.has(x)) return true;
-  const na = norm(a), nb = norm(b);
-  return !!(na && nb && (na.includes(nb) || nb.includes(na)));
+function aujourdhui() {
+  const d = new Date();
+  return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 1000;
 }
-
 function dateCourte(sec) {
   if (!sec) return "";
   const d = new Date(sec * 1000);
   return String(d.getUTCDate()).padStart(2, "0") + "/" + String(d.getUTCMonth() + 1).padStart(2, "0");
 }
-
-function liste(v) {
-  return Array.isArray(v) ? (v[0] === "L" ? v.slice(1) : v) : [];
+function versInput(sec) {
+  return sec ? new Date(sec * 1000).toISOString().slice(0, 10) : "";
 }
-
-// Grist renvoie les tables en colonnes : on les remet en lignes
+function depuisInput(v) {
+  if (!v) return null;
+  const [a, m, j] = v.split("-").map(Number);
+  return Date.UTC(a, m - 1, j) / 1000;
+}
 function lignes(table) {
   if (!table || !table.id) return [];
   const cols = Object.keys(table);
-  return table.id.map((_, i) => {
-    const r = {};
-    for (const c of cols) r[c] = table[c][i];
-    return r;
-  });
+  return table.id.map((_, i) => { const r = {}; for (const c of cols) r[c] = table[c][i]; return r; });
 }
 
-// ------------------------------------------------------------------ construction du suivi
+// ------------------------------------------------------------------ logique de suivi
 
-function construire(t, maintenant = Date.now() / 1000) {
-  const param = lignes(t.Parametres)[0] || {};
-  const campagne = param.Campagne || null;
-  const etabs = new Map(lignes(t.Etablissements).map(e => [e.id, e]));
-  const deCampagne = r => !campagne || !r.Campagne || r.Campagne === campagne;
-  const demandes = lignes(t.Demandes).filter(deCampagne);
-  const fiches = lignes(t.Fiches).filter(deCampagne).filter(f => f.Decision !== "Remplacée");
-
-  const groupes = new Map();   // id établissement -> { etab, formations[] }
-  const groupe = id => {
-    if (!groupes.has(id)) {
-      const e = etabs.get(id) || {};
-      groupes.set(id, { id, nom: e.Nom || "Établissement non identifié", formations: [] });
-    }
-    return groupes.get(id);
-  };
-
-  // 1. formations annoncées dans les demandes (mails) — plusieurs demandes d'un même établissement sont fusionnées
-  const parEtab = new Map();
-  for (const d of demandes) {
-    const id = d.Etablissement || 0;
-    const annoncees = String(d.Formations_annoncees || "").split(/\s*[,;\n]\s*/).filter(Boolean);
-    if (!parEtab.has(id)) { parEtab.set(id, { d: { ...d }, annoncees: [], nb: 0 }); }
-    const m = parEtab.get(id);
-    if (d.Date_mail && (!m.d.Date_mail || d.Date_mail < m.d.Date_mail)) m.d.Date_mail = d.Date_mail;
-    if (d.Date_envoi_lien && (!m.d.Date_envoi_lien || d.Date_envoi_lien > m.d.Date_envoi_lien)) m.d.Date_envoi_lien = d.Date_envoi_lien;
-    for (const a of annoncees) if (!m.annoncees.some(x => memeFormation(x, a))) m.annoncees.push(a);
-    m.nb = Math.max(m.nb, Number(d.Nb_annoncees) || 0);
-  }
-  for (const [id, m] of parEtab) {
-    const g = groupe(id), d = m.d, annoncees = m.annoncees;
-    const n = Math.max(annoncees.length, m.nb, 1);
-    for (let i = 0; i < n; i++) {
-      g.formations.push({ nom: annoncees[i] || "Formation " + (i + 1) + " (non précisée)", demande: d, fiche: null });
-    }
-  }
-
-  // 2. fiches reçues : rattachées à une formation annoncée si possible, sinon ligne à part
-  for (const f of fiches) {
-    const g = groupe(f.Etablissement || 0);
-    const libre = g.formations.find(x => !x.fiche && memeFormation(x.nom, f.Libelle_formation))
-      || g.formations.find(x => !x.fiche && /non précisée/.test(x.nom));
-    const dem = parEtab.has(f.Etablissement || 0) ? parEtab.get(f.Etablissement || 0).d : null;
-    if (libre) { libre.fiche = f; libre.nom = f.Libelle_formation || libre.nom; }
-    else g.formations.push({ nom: f.Libelle_formation || "Fiche sans libellé", demande: dem, fiche: f });
-  }
-
-  // 3. formations déjà sur Parcoursup (tableau de suivi d'origine)
-  for (const fp of lignes(t.Formations)) {
-    const g = groupe(fp.Etablissement || 0);
-    const deja = g.formations.find(x => x.fiche && fp.g_ta_cod && String(x.fiche.g_ta_cod || "") === String(fp.g_ta_cod));
-    if (deja) { deja.parcoursup = fp; continue; }
-    g.formations.push({ nom: fp.Intitule || "Formation " + fp.g_ta_cod, lieu: fp.Site_campus || "", parcoursup: fp, demande: null, fiche: null });
-  }
-
-  // 4. étapes et prochaine action de chaque formation
-  for (const g of groupes.values()) {
-    for (const x of g.formations) Object.assign(x, x.parcoursup && !x.fiche && !x.demande ? surParcoursup(x.parcoursup) : etapes(x, maintenant));
-    g.formations.sort((a, b) => ordre(a) - ordre(b) || a.nom.localeCompare(b.nom));
-  }
-
-  const mailsATraiter = lignes(t.Mails).filter(m => m.Statut === "Établissement à identifier" || m.Statut === "Demande à créer").length;
-  const accueil = lignes(t.Accueil)[0] || {};
-  return {
-    campagne, mailsATraiter, dernierImport: accueil.Dernier_import || null,
-    groupes: [...groupes.values()].sort((a, b) => a.nom.localeCompare(b.nom)),
-  };
+function etatEtape(r, et) {
+  const v = r[et.col];
+  if (et.type === "date") return v ? { s: "done", t: dateCourte(v) } : { s: "todo" };
+  if (et.type === "verif") return v === "Conforme" ? { s: "done" } : v === "À corriger" ? { s: "ko" } : { s: "todo" };
+  return v === "Publiée" ? { s: "done" } : { s: "todo" };
 }
 
-function etapes(x, maintenant) {
-  const d = x.demande || {}, f = x.fiche;
-  const e = [
-    d.Date_mail ? { s: "done", t: dateCourte(d.Date_mail) } : { s: x.demande ? "done" : "todo" },
-    d.Date_envoi_lien ? { s: "done", t: dateCourte(d.Date_envoi_lien) } : { s: f ? "done" : "todo" },
-    f ? { s: "done", t: dateCourte(f.Recu_le) } : { s: "todo" },
-    verif(f && f.Verif_UAI), verif(f && f.Verif_RNCP),
-    { s: "todo" },
-  ];
-  if (f && f.Catalogue === "Publiée") e[5] = { s: "done" };
-  else if (f && f.Verif_UAI === "Conforme" && f.Verif_RNCP === "Conforme") e[5] = { s: "warn" };
-
-  if (f && f.Decision === "Refusée") return { e, cat: "autre", next: { cls: "", titre: "Refusée", txt: f.Note_SAIO || "" }, refusee: true };
-
-  const rap = liste(f && f.Rapprochement);
-  let next;
-  if (e[3].s === "ko") next = { cls: "ko", titre: "À corriger", txt: "UAI" + (f.Cat_UAI ? " (catalogue : " + f.Cat_UAI + ")" : "") };
-  else if (e[4].s === "ko") next = { cls: "ko", titre: "À corriger", txt: "RNCP" + (f.Cat_RNCP ? " (catalogue : " + f.Cat_RNCP + ")" : "") };
-  else if (!x.demande && !f) next = { cls: "ko", titre: "Action requise", txt: "Enregistrer la demande" };
-  else if (e[1].s === "todo" && !f) next = { cls: "ko", titre: "Action requise", txt: "Envoyer le lien de la fiche" };
-  else if (!f) {
-    const j = d.Date_envoi_lien ? Math.floor((maintenant - d.Date_envoi_lien) / 86400) : 0;
-    next = j >= 10 ? { cls: "warn", titre: "Fiche attendue", txt: `Lien envoyé il y a ${j} j : relancer` }
-      : { cls: "warn", titre: "Fiche attendue", txt: "En attente de l'établissement" };
-  } else if (e[3].s === "todo") next = { cls: "ko", titre: "Action requise", txt: "Vérifier l'UAI" + (rap.includes("UAI ≠ catalogue") ? " — différent du catalogue" : rap.includes("UAI = catalogue") ? " — identique au catalogue" : "") };
-  else if (e[4].s === "todo") next = { cls: "ko", titre: "Action requise", txt: "Vérifier le RNCP" + (rap.includes("RNCP ≠ catalogue") ? " — différent du catalogue" : rap.includes("RNCP = catalogue") ? " — identique au catalogue" : "") };
-  else if (e[5].s !== "done") next = { cls: "warn", titre: "Validée par le SAIO", txt: f.Catalogue === "Absente du catalogue" ? "Pas encore au catalogue" : "En attente de publication au catalogue" };
-  else next = { cls: "ok", titre: "Terminé", txt: "Publiée au catalogue national" };
-
-  const cat = next.cls === "ok" ? "publie" : next.titre === "Fiche attendue" ? "attente" : next.cls === "ko" ? "action" : "autre";
-  return { e, cat, next };
+function analyser(r, maintenant) {
+  const e = ETAPES.map(et => etatEtape(r, et));
+  const ancienne = !!r.Origine && !r.Mail_recu && r.Publiee === "Publiée";
+  if (ancienne) return { e, cat: "parcoursup", next: { cls: "", titre: "Déjà sur Parcoursup", txt: r.g_ta_cod ? "n° " + r.g_ta_cod : "" } };
+  if (r.Publiee === "Publiée") return { e, cat: "publie", next: { cls: "ok", titre: "Terminé", txt: "Publiée au catalogue" } };
+  if (e[3].s === "ko") return { e, cat: "action", next: { cls: "ko", titre: "À corriger", txt: "UAI" + (r.Commentaire ? " — " + r.Commentaire : "") } };
+  if (e[4].s === "ko") return { e, cat: "action", next: { cls: "ko", titre: "À corriger", txt: "RNCP" + (r.Commentaire ? " — " + r.Commentaire : "") } };
+  if (!r.Lien_envoye && !r.Fiche_recue) return { e, cat: "action", next: { cls: "ko", titre: "Action requise", txt: "Envoyer le lien de la fiche" } };
+  if (!r.Fiche_recue) {
+    const j = Math.floor((maintenant - r.Lien_envoye) / JOUR);
+    return { e, cat: "attente", next: j >= 10
+      ? { cls: "warn", titre: "Fiche attendue", txt: `Lien envoyé il y a ${j} j : relancer` }
+      : { cls: "warn", titre: "Fiche attendue", txt: "En attente de l'établissement" } };
+  }
+  if (e[3].s === "todo") return { e, cat: "action", next: { cls: "ko", titre: "Action requise", txt: "Vérifier l'UAI" } };
+  if (e[4].s === "todo") return { e, cat: "action", next: { cls: "ko", titre: "Action requise", txt: "Vérifier le RNCP" } };
+  return { e, cat: "autre", next: { cls: "warn", titre: "Validée par le SAIO", txt: "En attente de publication au catalogue" } };
 }
 
-function surParcoursup(fp) {
-  const c = fp.Conformite || "Non contrôlé";
-  const e = ETAPES.map(() => ({ s: "done" }));
-  e[5] = { s: "done", t: fp.g_ta_cod ? "n° " + fp.g_ta_cod : "" };
-  const cls = c === "Non conforme" ? "ko" : c === "À surveiller" ? "warn" : c === "Conforme" ? "ok" : "";
-  return { e, cat: "parcoursup", next: { cls, titre: "Sur Parcoursup — affichage", txt: c }, lien: fp.Lien_Parcoursup || "" };
+function construire(rows, maintenant = aujourdhui()) {
+  const groupes = new Map();
+  for (const r of rows) {
+    const nom = (r.Etablissement || "").trim() || "Sans établissement";
+    const k = norm(nom);
+    if (!groupes.has(k)) groupes.set(k, { cle: k, nom, formations: [] });
+    groupes.get(k).formations.push({ r, ...analyser(r, maintenant) });
+  }
+  const ordre = { action: 0, attente: 1, autre: 2, publie: 3, parcoursup: 4 };
+  const gs = [...groupes.values()];
+  for (const g of gs) g.formations.sort((a, b) => ordre[a.cat] - ordre[b.cat] || String(a.r.Formation).localeCompare(String(b.r.Formation)));
+  const actif = g => g.formations.some(f => f.cat !== "parcoursup");
+  gs.sort((a, b) => (actif(b) - actif(a)) || a.nom.localeCompare(b.nom));
+  return gs;
 }
 
-function verif(v) {
-  if (v === "Conforme") return { s: "done" };
-  if (v === "À corriger") return { s: "ko" };
-  return { s: "todo" };
-}
+// ------------------------------------------------------------------ écriture dans Grist
 
-function ordre(x) {
-  return { action: 0, attente: 1, autre: 2, publie: 3, parcoursup: 4 }[x.cat] ?? 5;
+let DEMO = false, ROWS = [];
+
+async function maj(id, champs) {
+  if (DEMO) { const r = ROWS.find(x => x.id === id); Object.assign(r, champs); rendre(); return; }
+  await grist.docApi.applyUserActions([["UpdateRecord", TABLE, id, champs]]);
+  await charger();
+}
+async function ajouter(liste) {
+  if (DEMO) { for (const c of liste) ROWS.push({ id: Math.max(0, ...ROWS.map(r => r.id)) + 1, ...c }); rendre(); return; }
+  await grist.docApi.applyUserActions([["BulkAddRecord", TABLE, liste.map(() => null), colonnes(liste)]]);
+  await charger();
+}
+async function supprimer(id) {
+  if (DEMO) { ROWS = ROWS.filter(r => r.id !== id); rendre(); return; }
+  await grist.docApi.applyUserActions([["RemoveRecord", TABLE, id]]);
+  await charger();
+}
+function colonnes(liste) {
+  const cols = {};
+  for (const k of new Set(liste.flatMap(Object.keys))) cols[k] = liste.map(x => x[k] ?? null);
+  return cols;
 }
 
 // ------------------------------------------------------------------ affichage
 
-let DONNEES = null, filtre = "tous", recherche = "";
+let filtre = "tous", recherche = "";
 const ouverts = new Set();
 
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-}
-
 function rendre() {
-  const liste_ = document.getElementById("liste");
-  if (!liste_ || !DONNEES) return;
-  const toutes = DONNEES.groupes.flatMap(g => g.formations);
+  const zone = document.getElementById("liste");
+  if (!zone) return;
+  const groupes = construire(ROWS);
+  const toutes = groupes.flatMap(g => g.formations);
   const n = c => toutes.filter(f => f.cat === c).length;
   const kpis = document.getElementById("kpis");
   if (kpis) kpis.innerHTML = `
-    <div class="kpi"><b>${toutes.length}</b><span>formations</span></div>
     <div class="kpi ko"><b>${n("action")}</b><span>action requise</span></div>
     <div class="kpi warn"><b>${n("attente")}</b><span>fiche attendue</span></div>
+    <div class="kpi"><b>${n("autre")}</b><span>attente catalogue</span></div>
     <div class="kpi ok"><b>${n("publie")}</b><span>publiées</span></div>
     <div class="kpi"><b>${n("parcoursup")}</b><span>déjà sur Parcoursup</span></div>`;
-  const st = document.getElementById("sous-titre");
-  if (st) st.textContent = (DONNEES.campagne ? "Campagne Parcoursup " + DONNEES.campagne : "Toutes campagnes") +
-    (DONNEES.dernierImport ? " · catalogue importé le " + new Date(DONNEES.dernierImport * 1000).toLocaleDateString("fr-FR") : " · aucun export du catalogue importé");
   const ban = document.getElementById("bandeaux");
-  if (ban) ban.innerHTML = (DONNEES.alerte ? `<div class="banner" style="background:var(--red-bg);color:var(--red)">${esc(DONNEES.alerte)}</div>` : "") + (DONNEES.demo ? `<div class="demo">Mode démonstration : données fictives (le widget n'est pas ouvert dans Grist).</div>` : "") +
-    (DONNEES.mailsATraiter ? `<div class="banner">${DONNEES.mailsATraiter} mail${DONNEES.mailsATraiter > 1 ? "s" : ""} de demande à traiter : page « 1. Mails reçus ».</div>` : "");
+  if (ban) ban.innerHTML = DEMO ? `<div class="demo">Mode démonstration : données fictives (le widget n'est pas ouvert dans Grist).</div>` : "";
 
   const q = norm(recherche);
-  const html = DONNEES.groupes.map(g => {
-    const fs = g.formations.filter(f => (filtre === "tous" || f.cat === filtre) && (!q || norm(g.nom).includes(q) || norm(f.nom).includes(q)));
+  const html = groupes.map(g => {
+    const fs = g.formations.filter(f => (filtre === "tous" || f.cat === filtre) &&
+      (!q || norm(g.nom).includes(q) || norm(f.r.Formation).includes(q)));
     if (!fs.length) return "";
-    const tot = g.formations.length;
-    const c = k => g.formations.filter(f => f.cat === k).length;
-    const ps = c("parcoursup"), pub = c("publie") + ps, act = c("action"), att = c("attente"), aut = tot - pub - act - att;
+    const tot = g.formations.length, c = k => g.formations.filter(f => f.cat === k).length;
+    const act = c("action"), att = c("attente"), aut = c("autre"), pub = c("publie"), ps = c("parcoursup");
+    const enCours = tot - ps;
     const seg = (k, col) => k ? `<i style="width:${100 * k / tot}%;background:${col}"></i>` : "";
     const pl = k => k > 1 ? "s" : "";
     const tags = [
       act ? `<span class="tag ko">${act} action${pl(act)} requise${pl(act)}</span>` : "",
       att ? `<span class="tag warn">${att} fiche${pl(att)} attendue${pl(att)}</span>` : "",
-      aut ? `<span class="tag wait">${aut} en attente</span>` : "",
-      pub - ps ? `<span class="tag ok">${pub - ps} publiée${pl(pub - ps)}</span>` : "",
+      aut ? `<span class="tag wait">${aut} en attente catalogue</span>` : "",
+      pub ? `<span class="tag ok">${pub} publiée${pl(pub)}</span>` : "",
       ps ? `<span class="tag wait">${ps} déjà sur Parcoursup</span>` : "",
     ].join("");
-    const ouvert = ouverts.has(g.id) || q || filtre !== "tous";
-    const lignesHtml = fs.map(f => {
-      const steps = ETAPES.map((nom, i) => {
-        const s = f.e[i].s;
-        const ic = s === "done" ? "✓" : s === "ko" ? "!" : s === "warn" ? "…" : "";
-        return `<div class="step ${s}"><div class="dot">${ic}</div>${nom}${f.e[i].t ? `<em>${esc(f.e[i].t)}</em>` : ""}</div>`;
-      }).join("");
-      return `<div class="form${f.refusee ? " refusee" : ""}">
-        <div class="form-name"><b>${esc(f.nom)}</b><span>${f.lien ? `<a href="${esc(f.lien)}" target="_blank" rel="noopener">fiche Parcoursup</a>${f.lieu ? " · " + esc(f.lieu) : ""}` : esc(f.fiche ? (f.fiche.Commune || "") : "fiche non reçue")}</span></div>
-        ${f.cat === "parcoursup" ? `<div class="steps" style="color:var(--muted);font-size:13px">Déjà ouverte sur Parcoursup${f.parcoursup && f.parcoursup.g_ta_cod ? " (n° " + esc(f.parcoursup.g_ta_cod) + ")" : ""} — pas de demande cette campagne</div>` : `<div class="steps">${steps}</div>`}
-        <div class="next ${f.next.cls}"><b>${esc(f.next.titre)}</b>${esc(f.next.txt)}</div>
-      </div>`;
-    }).join("");
-    return `<section class="etab${ouvert ? " open" : ""}" data-id="${g.id}">
+    const ouvert = ouverts.has(g.cle) || !!q || filtre !== "tous";
+    return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
       <div class="etab-head">
         <span class="chev">▶</span>
-        <div class="etab-name"><b>${esc(g.nom)}</b><span>${tot} formation${pl(tot)}</span></div>
-        <div><div class="progress">${seg(pub, "var(--green)")}${seg(aut, "#9fd8b0")}${seg(att, "#f5a000")}${seg(act, "var(--red)")}</div>
-          <div class="progress-label">${pub} / ${tot} publiée${pl(pub)}</div></div>
+        <div class="etab-name"><b>${esc(g.nom)}</b><span>${enCours ? enCours + " demande" + pl(enCours) + " en cours" : "aucune demande en cours"}${ps ? " · " + ps + " déjà sur Parcoursup" : ""}</span></div>
+        <div><div class="progress">${seg(pub + ps, "var(--green)")}${seg(aut, "#9fd8b0")}${seg(att, "#f5a000")}${seg(act, "var(--red)")}</div>
+          <div class="progress-label">${pub + ps} / ${tot} publiée${pl(pub + ps)}</div></div>
         <div class="tags">${tags}</div>
       </div>
-      <div class="forms">${lignesHtml}</div>
+      <div class="forms">${fs.map(ligneFormation).join("")}
+        <div class="ajout-ligne"><button class="btn-lien" data-ajout="${esc(g.nom)}">+ Ajouter une formation pour ${esc(g.nom)}</button></div>
+      </div>
     </section>`;
   }).join("");
-  liste_.innerHTML = html || `<div class="empty">${DONNEES.groupes.length ? "Aucune formation ne correspond." :
-    "Aucune demande pour cette campagne. Enregistrez une demande (page « 2. Suivi par établissement ») pour la voir apparaître ici."}</div>`;
-  liste_.querySelectorAll(".etab-head").forEach(h => h.addEventListener("click", () => {
-    const s = h.parentElement, id = Number(s.dataset.id);
+  zone.innerHTML = html || `<div class="empty">${ROWS.length ? "Aucune formation ne correspond." : "Aucune formation suivie. Cliquez sur « + Nouvelle demande » pour commencer."}</div>`;
+  brancher(zone);
+}
+
+function ligneFormation(f) {
+  const r = f.r;
+  const steps = ETAPES.map((et, i) => {
+    const s = f.e[i].s;
+    const ic = s === "done" ? "✓" : s === "ko" ? "!" : "";
+    return `<button class="step ${s}" data-id="${r.id}" data-etape="${i}" title="Cliquer pour modifier">
+      <span class="dot">${ic}</span>${et.nom}${f.e[i].t ? `<em>${esc(f.e[i].t)}</em>` : ""}</button>`;
+  }).join("");
+  const sous = [];
+  if (r.Lieu) sous.push(esc(r.Lieu));
+  if (r.Lien_Parcoursup) sous.push(`<a href="${esc(r.Lien_Parcoursup)}" target="_blank" rel="noopener">fiche Parcoursup</a>`);
+  return `<div class="form" data-id="${r.id}">
+    <div class="form-name"><b>${esc(r.Formation || "(sans intitulé)")}</b><span>${sous.join(" · ")}</span></div>
+    <div class="steps">${steps}</div>
+    <div class="next ${f.next.cls}"><b>${esc(f.next.titre)}</b>${esc(f.next.txt)}
+      <div class="outils"><button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "Modifier le commentaire" : "+ Commentaire"}</button>
+      <button class="btn-lien rouge" data-suppr="${r.id}">Supprimer</button></div>
+      ${r.Commentaire && f.next.titre !== "À corriger" ? `<div class="com">${esc(r.Commentaire)}</div>` : ""}
+    </div>
+  </div>`;
+}
+
+function brancher(zone) {
+  zone.querySelectorAll(".etab-head").forEach(h => h.addEventListener("click", () => {
+    const s = h.parentElement;
     s.classList.toggle("open");
-    if (s.classList.contains("open")) ouverts.add(id); else ouverts.delete(id);
+    if (s.classList.contains("open")) ouverts.add(s.dataset.cle); else ouverts.delete(s.dataset.cle);
+  }));
+  zone.querySelectorAll(".step").forEach(b => b.addEventListener("click", ev => {
+    ev.stopPropagation();
+    ouvrirEtape(b, Number(b.dataset.id), Number(b.dataset.etape));
+  }));
+  zone.querySelectorAll("[data-com]").forEach(b => b.addEventListener("click", () => {
+    const id = Number(b.dataset.com), r = ROWS.find(x => x.id === id);
+    const t = prompt("Commentaire pour « " + (r.Formation || "") + " » :", r.Commentaire || "");
+    if (t !== null) maj(id, { Commentaire: t.trim() });
+  }));
+  zone.querySelectorAll("[data-suppr]").forEach(b => b.addEventListener("click", () => {
+    const id = Number(b.dataset.suppr), r = ROWS.find(x => x.id === id);
+    if (confirm("Supprimer « " + (r.Formation || "") + " » du suivi ?")) supprimer(id);
+  }));
+  zone.querySelectorAll("[data-ajout]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); ouvrirAjout(b.dataset.ajout); }));
+}
+
+// ------------------------------------------------------------------ fenêtre de modification d'une étape
+
+function fermerPop() {
+  const p = document.getElementById("pop");
+  if (p) p.remove();
+}
+
+function placer(pop, ancre) {
+  document.body.appendChild(pop);
+  if (ancre) {
+    const rect = ancre.getBoundingClientRect();
+    pop.style.top = (window.scrollY + rect.bottom + 6) + "px";
+    pop.style.left = Math.max(8, Math.min(window.innerWidth - pop.offsetWidth - 8, window.scrollX + rect.left - 60)) + "px";
+  } else {
+    pop.style.top = (window.scrollY + 90) + "px";
+    pop.style.left = Math.max(8, (window.innerWidth - pop.offsetWidth) / 2) + "px";
+  }
+}
+
+function ouvrirEtape(bouton, id, i) {
+  fermerPop();
+  const r = ROWS.find(x => x.id === id), et = ETAPES[i];
+  if (!r) return;
+  const pop = document.createElement("div");
+  pop.id = "pop"; pop.className = "pop";
+  const effacer = r[et.col] ? `<button class="btn gris" data-v="vide">Effacer</button>` : "";
+  let corps;
+  if (et.type === "date") {
+    corps = `<label>${et.nom} le <input type="date" id="pop-date" value="${versInput(r[et.col]) || versInput(aujourdhui())}"></label>
+      <div class="pop-btns"><button class="btn" data-v="ok">Valider</button>${effacer}</div>`;
+  } else if (et.type === "verif") {
+    corps = `<div class="pop-btns"><button class="btn vert" data-v="Conforme">Conforme</button>
+      <button class="btn rouge" data-v="À corriger">À corriger</button>${effacer}</div>`;
+  } else {
+    corps = `<div class="pop-btns"><button class="btn vert" data-v="Publiée">Publiée au catalogue</button>${effacer}</div>`;
+  }
+  pop.innerHTML = `<b>${esc(r.Formation || "")} — ${et.nom}</b>${corps}`;
+  placer(pop, bouton);
+  pop.querySelectorAll("[data-v]").forEach(b => b.addEventListener("click", async () => {
+    const v = b.dataset.v, champs = {};
+    if (v === "vide") champs[et.col] = null;
+    else if (et.type === "date") {
+      const d = document.getElementById("pop-date");
+      champs[et.col] = (d && depuisInput(d.value)) || aujourdhui();
+    } else champs[et.col] = v;
+    if (v === "À corriger") {
+      const t = prompt("Que faut-il corriger ? (facultatif)", r.Commentaire || "");
+      if (t !== null && t.trim()) champs.Commentaire = t.trim();
+    }
+    fermerPop();
+    await maj(id, champs);
   }));
 }
 
-// ------------------------------------------------------------------ données Grist (ou démonstration)
+// ------------------------------------------------------------------ ajout d'établissement / de formations
 
-const TABLES = ["Parametres", "Etablissements", "Demandes", "Fiches", "Mails", "Accueil", "Formations"];
+function ouvrirAjout(etab) {
+  fermerPop();
+  const noms = [...new Set(ROWS.map(r => (r.Etablissement || "").trim()).filter(Boolean))].sort();
+  const pop = document.createElement("div");
+  pop.id = "pop"; pop.className = "pop pop-large";
+  pop.innerHTML = `<b>${etab ? "Ajouter des formations pour " + esc(etab) : "Nouvelle demande de référencement"}</b>
+    <label>Établissement <input id="aj-etab" list="aj-liste" value="${esc(etab || "")}" placeholder="Nom de l'établissement"></label>
+    <datalist id="aj-liste">${noms.map(n => `<option value="${esc(n)}">`).join("")}</datalist>
+    <label>Formations demandées <small>(une par ligne)</small>
+      <textarea id="aj-forms" rows="4" placeholder="BTS NDRC&#10;BTS MCO"></textarea></label>
+    <label>Lieu / campus <small>(facultatif)</small> <input id="aj-lieu"></label>
+    <label>Mail reçu le <input type="date" id="aj-date" value="${versInput(aujourdhui())}"></label>
+    <div class="pop-btns"><button class="btn" id="aj-ok">Ajouter</button><button class="btn gris" id="aj-annul">Annuler</button></div>`;
+  placer(pop, null);
+  const champ = document.getElementById(etab ? "aj-forms" : "aj-etab");
+  if (champ) champ.focus();
+  const annul = document.getElementById("aj-annul");
+  if (annul) annul.addEventListener("click", fermerPop);
+  const ok = document.getElementById("aj-ok");
+  if (ok) ok.addEventListener("click", async () => {
+    const eEl = document.getElementById("aj-etab"), fEl = document.getElementById("aj-forms");
+    const lEl = document.getElementById("aj-lieu"), dEl = document.getElementById("aj-date");
+    const e = eEl ? eEl.value.trim() : "";
+    const forms = (fEl ? fEl.value : "").split(/\n|;/).map(x => x.trim()).filter(Boolean);
+    if (!e || !forms.length) { alert("Indiquez l'établissement et au moins une formation."); return; }
+    const lieu = lEl ? lEl.value.trim() : "";
+    const date = (dEl && depuisInput(dEl.value)) || aujourdhui();
+    fermerPop();
+    ouverts.add(norm(e));
+    await ajouter(forms.map(f => ({ Etablissement: e, Formation: f, Lieu: lieu || null, Mail_recu: date })));
+  });
+}
+
+// ------------------------------------------------------------------ chargement
 
 async function charger() {
-  const t = {};
-  let refus = 0, absentes = [];
-  for (const nom of TABLES) {
-    try { t[nom] = await grist.docApi.fetchTable(nom); }
-    catch (e) {
-      t[nom] = null;
-      if (/access|denied|permission|not allowed/i.test(String(e && e.message || e))) refus++; else absentes.push(nom);
-    }
+  try {
+    ROWS = lignes(await grist.docApi.fetchTable(TABLE));
+    DEMO = false;
+  } catch (e) {
+    const ban = document.getElementById("bandeaux");
+    if (ban) ban.innerHTML = `<div class="banner" style="background:var(--red-bg);color:var(--red)">Impossible de lire la table « ${TABLE} » (${esc(e && e.message || e)}).
+      Vérifiez que le widget a l'« Accès complet au document » : panneau de droite, onglet « Personnalisée ».</div>`;
+    return;
   }
-  DONNEES = construire(t);
-  if (refus) DONNEES.alerte = "Le widget n'a pas l'accès complet au document. Dans le panneau de droite (onglet « Personnalisée »), choisissez « Accès complet au document » puis acceptez.";
-  else if (!t.Etablissements || !t.Fiches) DONNEES.alerte = "Ce document ne contient pas les tables du suivi (" + absentes.join(", ") + "). Le widget doit être ajouté dans le document « Suivi_formations_apprentissage ».";
   rendre();
 }
 
 function demo() {
+  DEMO = true;
   const j = s => Date.UTC(2026, Number(s.slice(3, 5)) - 1, Number(s.slice(0, 2))) / 1000;
-  const t = {
-    Parametres: { id: [1], Campagne: [2027] },
-    Etablissements: { id: [1, 2, 3, 4], Nom: ["TALIS", "CAMPUS DU LAC", "ADREC", "PIGIER"] },
-    Demandes: {
-      id: [1, 2, 3, 4], Etablissement: [1, 2, 3, 4], Campagne: [2027, 2027, 2027, 2027],
-      Date_mail: [j("20/10"), j("29/10"), j("15/10"), j("08/10")],
-      Formations_annoncees: ["BTS NDRC, BTS MCO, BTS Communication", "BTS GPME",
-        "Titre professionnel Négociateur technico-commercial, Titre professionnel Gestionnaire de paie", "BTS GPME, Bachelor RH"],
-      Nb_annoncees: [3, 1, 2, 2], Date_envoi_lien: [j("21/10"), null, j("16/10"), j("09/10")],
-    },
-    Fiches: {
-      id: [1, 2, 3, 4, 5, 6], Etablissement: [1, 1, 3, 3, 4, 4], Campagne: [2027, 2027, 2027, 2027, 2027, 2027],
-      Libelle_formation: ["BTS NDRC", "BTS Management Commercial Opérationnel", "Titre professionnel Négociateur technico-commercial",
-        "Titre professionnel Gestionnaire de paie", "BTS GPME", "Bachelor RH"],
-      Recu_le: [j("25/10"), j("25/10"), j("22/10"), j("22/10"), j("14/10"), j("14/10")],
-      Verif_UAI: ["Conforme", "Conforme", "À corriger", "Conforme", "Conforme", "Conforme"],
-      Verif_RNCP: ["Conforme", null, null, "Conforme", "Conforme", "Conforme"],
-      Catalogue: ["Publiée", "Publiée", "Non publiée", "Non publiée", "Publiée", "Publiée"],
-      Rapprochement: [["L", "UAI = catalogue", "RNCP = catalogue"], ["L", "UAI = catalogue", "RNCP ≠ catalogue"], ["L", "UAI ≠ catalogue"], null, null, null],
-      Cat_UAI: [null, null, "0333233K", null, null, null], Cat_RNCP: [null, "38362", null, null, null, null],
-      Commune: ["Bordeaux", "Bordeaux", "Bordeaux", "Bordeaux", "Bordeaux", "Bordeaux"],
-      Decision: ["En cours", "En cours", "En cours", "En cours", "En cours", "En cours"],
-    },
-    Mails: { id: [1, 2], Statut: ["Demande à créer", "Rattaché à une demande"] },
-    Accueil: { id: [1], Dernier_import: [j("02/11")] },
-  };
-  DONNEES = construire(t, j("02/11"));
-  DONNEES.demo = true;
+  ROWS = [
+    { id: 1, Etablissement: "TALIS", Formation: "BTS NDRC", Lieu: "TALIS Bordeaux", Mail_recu: j("20/10"), Lien_envoye: j("21/10"), Fiche_recue: j("25/10"), UAI: "Conforme", RNCP: "Conforme", Publiee: "Publiée" },
+    { id: 2, Etablissement: "TALIS", Formation: "BTS MCO", Lieu: "TALIS Bordeaux", Mail_recu: j("20/10"), Lien_envoye: j("21/10"), Fiche_recue: j("25/10"), UAI: "Conforme", RNCP: "À corriger", Commentaire: "RNCP de la fiche ≠ catalogue (38362 attendu)" },
+    { id: 3, Etablissement: "TALIS", Formation: "BTS Communication", Lieu: "TALIS Bayonne", Mail_recu: j("20/10"), Lien_envoye: j("21/10") },
+    { id: 4, Etablissement: "CAMPUS DU LAC", Formation: "BTS GPME", Mail_recu: j("29/10") },
+    { id: 5, Etablissement: "ADREC", Formation: "TP Gestionnaire de paie", Mail_recu: j("15/10"), Lien_envoye: j("16/10"), Fiche_recue: j("22/10"), UAI: "Conforme", RNCP: "Conforme" },
+    { id: 6, Etablissement: "PIGIER", Formation: "BTS GPME - en apprentissage", Lieu: "PIGIER BORDEAUX (33)", Publiee: "Publiée", Origine: "Tableau initial", g_ta_cod: "34388" },
+  ];
   rendre();
 }
 
@@ -320,21 +339,23 @@ if (typeof window !== "undefined") {
       document.querySelectorAll(".chip").forEach(x => x.classList.remove("on"));
       c.classList.add("on"); filtre = c.dataset.f; rendre();
     }));
-    const r = document.getElementById("refresh");
-    if (r) r.addEventListener("click", () => (window.grist && window.self !== window.top) ? charger() : demo());
+    const nouv = document.getElementById("nouveau");
+    if (nouv) nouv.addEventListener("click", ev => { ev.stopPropagation(); ouvrirAjout(""); });
+    document.addEventListener("click", ev => {
+      const p = document.getElementById("pop");
+      if (p && !p.contains(ev.target)) fermerPop();
+    });
+    document.addEventListener("keydown", ev => { if (ev.key === "Escape") fermerPop(); });
 
     if (window.grist && window.self !== window.top) {
       grist.ready({ requiredAccess: "full" });
-      let attente = null;
-      const recharger = () => { clearTimeout(attente); attente = setTimeout(charger, 300); };
-      grist.onRecords(recharger);
-      grist.onRecord(recharger);
+      let t = null;
+      grist.onRecords(() => { clearTimeout(t); t = setTimeout(charger, 200); });
       charger();
-      setInterval(charger, 30000);
     } else {
       demo();
     }
   });
 }
 
-if (typeof module !== "undefined") module.exports = { construire, memeFormation, lignes };
+if (typeof module !== "undefined") module.exports = { construire, analyser };
