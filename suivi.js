@@ -213,8 +213,7 @@ function rendre() {
       <div class="etab-head"><span class="chev">▶</span>
         <div class="etab-name"><b>${esc(g.nom)}</b> <button class="btn-lien" data-renom-etab="${esc(g.nom)}" title="Renommer l'établissement">✎ renommer</button><span>${tot} formation${pl(tot)}${tot - ps - pub ? " · " + (tot - ps - pub) + " en cours" : ""}</span>
           <span class="contact">${contactHtml(contactDe(g.nom))} <button class="btn-lien" data-contact="${esc(g.nom)}">✎ contact</button>
-            ${tot - ps ? `· <button class="btn-lien" data-commentaire="${esc(g.nom)}">✎ commentaire</button>` : ""}</span>
-          ${commentaireDe(g.nom) ? `<span class="com-demande">💬 ${esc(commentaireDe(g.nom))}</span>` : ""}</div>
+</span></div>
         <div><div class="progress">${seg(pub + ps, "var(--green)")}${seg(att, "#9fd8b0")}${seg(sai, "#f5a000")}${seg(rel, "var(--red)")}</div>
           <div class="progress-label">${pub + ps} / ${tot} terminée${pl(pub + ps)}</div></div>
         <div class="tags">${tags}</div></div>
@@ -234,7 +233,7 @@ function aRelancer(groupes, maintenant) {
     const ls = g.formations.filter(f => motifRelance(f));
     if (!ls.length) continue;
     const derniere = Math.max(0, ...ls.map(f => f.r.Relance_le || 0));
-    out.push({ nom: g.nom, lignes: ls.map(f => ({ formation: f.r.Formation, motif: motifRelance(f) })), ids: ls.map(f => f.r.id),
+    out.push({ nom: g.nom, lignes: ls.map(f => ({ formation: f.r.Formation, motif: motifRelance(f), com: f.r.Commentaire })), ids: ls.map(f => f.r.id),
       derniere, masque: derniere && (maintenant - derniere) / JOUR < DELAI_RELANCE });
   }
   return out.sort((a, b) => a.masque - b.masque || a.nom.localeCompare(b.nom));
@@ -249,9 +248,9 @@ function panneaux(groupes, relances) {
     <section class="panneau"><h2>À relancer <span class="compte ${act.length ? "ko" : "ok"}">${act.length} établissement${act.length > 1 ? "s" : ""}</span></h2>
       ${act.length ? `<div class="cartes">${act.map(e => `<div class="carte"><div class="carte-tete"><div><b>${esc(e.nom)}</b>
           <div class="contact">${contactHtml(contactDe(e.nom), '<i>contact non renseigné</i>')}</div>
-          ${commentaireDe(e.nom) ? `<div class="com-demande">💬 ${esc(commentaireDe(e.nom))}</div>` : ""}</div>
+</div>
           <button class="btn petit" data-relance="${e.ids.join(",")}">Relancé aujourd'hui</button></div>
-          <ul>${e.lignes.map(l => `<li><b>${esc(l.formation)}</b> — ${esc(l.motif)}</li>`).join("")}</ul></div>`).join("")}</div>`
+          <ul>${e.lignes.map(l => `<li><b>${esc(l.formation)}</b> — ${esc(l.motif)}${l.com ? `<div class="com">${esc(l.com)}</div>` : ""}</li>`).join("")}</ul></div>`).join("")}</div>`
         : `<p class="rien">Personne à relancer pour le moment.</p>`}
       ${mas.length ? `<p class="rien">Relancés récemment (réapparaissent après ${DELAI_RELANCE} jours si rien ne bouge) : ${mas.map(e => esc(e.nom) + " le " + dateCourte(e.derniere)).join(", ")}</p>` : ""}
     </section>
@@ -279,14 +278,16 @@ function ligneFormation(f) {
   const sous = [];
   if (r.Lieu) sous.push(esc(r.Lieu));
   if (r.Lien_Parcoursup) sous.push(`<a href="${esc(r.Lien_Parcoursup)}" target="_blank" rel="noopener">fiche Parcoursup</a>`);
-  const outils = f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "";
+  const outils = [
+    f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
+    `<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "Commentaire" : "+ Commentaire"}</button>`].join("");
   return `<div class="form" data-id="${r.id}">
     <div class="form-name"><b>${esc(r.Formation || "(sans intitulé)")}</b><span>${sous.join(" · ")}</span>
       <span class="gestion"><button class="btn-lien" data-renom="${r.id}">renommer</button> · <button class="btn-lien rouge" data-suppr="${r.id}">supprimer</button></span></div>
     <div class="steps">${steps}</div>
     <div class="next ${f.next.cls}"><b>${esc(f.next.titre)}</b>${esc(f.next.txt)}
       <div class="outils">${outils}</div>
-</div>
+      ${r.Commentaire ? `<div class="com">${esc(r.Commentaire)}</div>` : ""}</div>
   </div>`;
 }
 
