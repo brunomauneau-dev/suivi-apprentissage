@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Suivi des référencements</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js" defer></script>
-<script src="suivi.js?v=3" defer></script>
+<script src="suivi.js?v=4" defer></script>
 <style>
   :root {
     --bg: #f6f6f6; --card: #ffffff; --text: #1e1e1e; --muted: #666; --line: #e5e5e5;
@@ -83,6 +83,21 @@
   .pop-btns { display: flex; gap: 8px; flex-wrap: wrap; }
   .btn { background: var(--blue); color: #fff; border: 0; border-radius: 6px; padding: 8px 12px; cursor: pointer; font: inherit; }
   .btn.vert { background: var(--green); } .btn.rouge { background: var(--red); } .btn.gris { background: var(--grey-bg); color: var(--text); }
+  .panneaux { padding: 14px 24px 0; display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+  .panneau { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; }
+  .panneau h2 { font-size: 16px; margin: 0 0 10px; display: flex; align-items: center; gap: 10px; }
+  .compte { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
+  .compte.ko { background: var(--red-bg); color: var(--red); } .compte.warn { background: var(--amber-bg); color: var(--amber); } .compte.ok { background: var(--green-bg); color: var(--green); }
+  .cartes { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+  .carte { border: 1px solid var(--red-bg); border-left: 4px solid var(--red); border-radius: 8px; padding: 10px 12px; }
+  .carte-tete { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .carte ul, .taches { margin: 0; padding-left: 18px; font-size: 13px; }
+  .carte li, .taches li { margin: 3px 0; }
+  .taches { list-style: none; padding: 0; max-height: 260px; overflow: auto; }
+  .btn.petit { padding: 5px 9px; font-size: 12px; }
+  .rien { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+  .titre-liste { padding: 18px 24px 0; font-size: 16px; margin: 0; }
+  @media (max-width: 900px) { .panneaux { grid-template-columns: 1fr; } }
   .empty { text-align: center; color: var(--muted); padding: 40px; }
   @media (max-width: 900px) {
     .etab-head { grid-template-columns: 22px 1fr; }
@@ -98,6 +113,8 @@
   <div class="kpis" id="kpis"></div>
 </header>
 <div id="bandeaux"></div>
+<div class="panneaux" id="panneaux"></div>
+<h2 class="titre-liste">Toutes les formations, par établissement</h2>
 <div class="bar">
   <input id="q" type="search" placeholder="Rechercher un établissement ou une formation…">
   <button class="chip on" data-f="tous">Tous</button>

@@ -12,6 +12,8 @@ const ETAPES = [
   { col: "Publiee", nom: "Publiée", type: "pub" },
 ];
 const JOUR = 86400;
+const DELAI_FICHE = 10;    // jours après l'envoi du lien avant de relancer pour la fiche
+const DELAI_RELANCE = 7;   // une relance masque l'établissement pendant ce nombre de jours
 
 // ------------------------------------------------------------------ utilitaires
 
@@ -70,6 +72,50 @@ function analyser(r, maintenant) {
   if (e[3].s === "todo") return { e, cat: "action", next: { cls: "ko", titre: "Action requise", txt: "Vérifier l'UAI" } };
   if (e[4].s === "todo") return { e, cat: "action", next: { cls: "ko", titre: "Action requise", txt: "Vérifier le RNCP" } };
   return { e, cat: "autre", next: { cls: "warn", titre: "Validée par le SAIO", txt: "En attente de publication au catalogue" } };
+}
+
+// Ce qu'il faut demander à l'établissement (relance) ou faire au SAIO
+function motifs(r, maintenant) {
+  const ancienne = !!r.Origine && !r.Mail_recu && r.Publiee === "Publiée";
+  if (ancienne || r.Publiee === "Publiée") return { relance: [], saio: [] };
+  const relance = [], saio = [];
+  if (r.UAI === "À corriger") relance.push("UAI à corriger" + (r.Commentaire ? " : " + r.Commentaire : ""));
+  if (r.RNCP === "À corriger") relance.push("RNCP à corriger" + (r.Commentaire && r.UAI !== "À corriger" ? " : " + r.Commentaire : ""));
+  if (!r.Fiche_recue && r.Lien_envoye) {
+    const j = Math.floor((maintenant - r.Lien_envoye) / JOUR);
+    if (j >= DELAI_FICHE) relance.push(`fiche non reçue (lien envoyé il y a ${j} jours)`);
+  }
+  if (!r.Lien_envoye && !r.Fiche_recue) saio.push("envoyer le lien de la fiche");
+  else if (r.Fiche_recue && !r.UAI) saio.push("vérifier l'UAI");
+  else if (r.Fiche_recue && r.UAI === "Conforme" && !r.RNCP) saio.push("vérifier le RNCP");
+  else if (r.UAI === "Conforme" && r.RNCP === "Conforme") saio.push("attendre la publication au catalogue");
+  return { relance, saio };
+}
+
+function aRelancer(rows, maintenant = aujourdhui()) {
+  const parEtab = new Map();
+  for (const r of rows) {
+    const m = motifs(r, maintenant);
+    if (!m.relance.length) continue;
+    const nom = (r.Etablissement || "").trim() || "Sans établissement", k = norm(nom);
+    if (!parEtab.has(k)) parEtab.set(k, { nom, lignes: [], derniere: 0, ids: [] });
+    const e = parEtab.get(k);
+    e.lignes.push({ formation: r.Formation, motifs: m.relance });
+    e.ids.push(r.id);
+    e.derniere = Math.max(e.derniere, r.Relance_le || 0);
+  }
+  return [...parEtab.values()]
+    .map(e => ({ ...e, masque: e.derniere && (maintenant - e.derniere) / JOUR < DELAI_RELANCE }))
+    .sort((a, b) => a.masque - b.masque || a.nom.localeCompare(b.nom));
+}
+
+function tachesSaio(rows, maintenant = aujourdhui()) {
+  const t = [];
+  for (const r of rows) {
+    const m = motifs(r, maintenant);
+    for (const x of m.saio) if (x !== "attendre la publication au catalogue") t.push({ etab: r.Etablissement, formation: r.Formation, tache: x });
+  }
+  return t.sort((a, b) => String(a.tache).localeCompare(b.tache) || String(a.etab).localeCompare(b.etab));
 }
 
 function construire(rows, maintenant = aujourdhui()) {
@@ -133,6 +179,33 @@ function rendre() {
     <div class="kpi"><b>${n("parcoursup")}</b><span>déjà sur Parcoursup</span></div>`;
   const ban = document.getElementById("bandeaux");
   if (ban) ban.innerHTML = DEMO ? `<div class="demo">Mode démonstration : données fictives (le widget n'est pas ouvert dans Grist).</div>` : "";
+
+  const rel = aRelancer(ROWS), act = rel.filter(e => !e.masque), mas = rel.filter(e => e.masque);
+  const taches = tachesSaio(ROWS);
+  const pan = document.getElementById("panneaux");
+  if (pan) pan.innerHTML = `
+    <section class="panneau">
+      <h2>À relancer <span class="compte ${act.length ? "ko" : "ok"}">${act.length} établissement${act.length > 1 ? "s" : ""}</span></h2>
+      ${act.length ? `<div class="cartes">${act.map(e => `
+        <div class="carte">
+          <div class="carte-tete"><b>${esc(e.nom)}</b>
+            <button class="btn petit" data-relance="${e.ids.join(",")}">Relancé aujourd'hui</button></div>
+          <ul>${e.lignes.map(l => `<li><b>${esc(l.formation)}</b> — ${l.motifs.map(esc).join(" ; ")}</li>`).join("")}</ul>
+        </div>`).join("")}</div>` : `<p class="rien">Personne à relancer pour le moment.</p>`}
+      ${mas.length ? `<p class="rien">Relancés récemment (réapparaîtront dans ${DELAI_RELANCE} jours si rien ne bouge) : ${mas.map(e => esc(e.nom) + " le " + dateCourte(e.derniere)).join(", ")}</p>` : ""}
+    </section>
+    <section class="panneau">
+      <h2>À faire au SAIO <span class="compte ${taches.length ? "warn" : "ok"}">${taches.length}</span></h2>
+      ${taches.length ? `<ul class="taches">${taches.map(t => `<li><span class="tag warn">${esc(t.tache)}</span> ${esc(t.etab)} — ${esc(t.formation)}</li>`).join("")}</ul>`
+        : `<p class="rien">Rien à faire pour le moment.</p>`}
+    </section>`;
+  if (pan) pan.querySelectorAll("[data-relance]").forEach(b => b.addEventListener("click", async () => {
+    const ids = b.dataset.relance.split(",").map(Number);
+    const d = aujourdhui();
+    if (DEMO) { for (const r of ROWS) if (ids.includes(r.id)) r.Relance_le = d; rendre(); return; }
+    await grist.docApi.applyUserActions([["BulkUpdateRecord", TABLE, ids, { Relance_le: ids.map(() => d) }]]);
+    await charger();
+  }));
 
   const q = norm(recherche);
   const html = groupes.map(g => {
@@ -323,7 +396,8 @@ function demo() {
   ROWS = [
     { id: 1, Etablissement: "TALIS", Formation: "BTS NDRC", Lieu: "TALIS Bordeaux", Mail_recu: j("20/10"), Lien_envoye: j("21/10"), Fiche_recue: j("25/10"), UAI: "Conforme", RNCP: "Conforme", Publiee: "Publiée" },
     { id: 2, Etablissement: "TALIS", Formation: "BTS MCO", Lieu: "TALIS Bordeaux", Mail_recu: j("20/10"), Lien_envoye: j("21/10"), Fiche_recue: j("25/10"), UAI: "Conforme", RNCP: "À corriger", Commentaire: "RNCP de la fiche ≠ catalogue (38362 attendu)" },
-    { id: 3, Etablissement: "TALIS", Formation: "BTS Communication", Lieu: "TALIS Bayonne", Mail_recu: j("20/10"), Lien_envoye: j("21/10") },
+    { id: 3, Etablissement: "TALIS", Formation: "BTS Communication", Lieu: "TALIS Bayonne", Mail_recu: j("10/10"), Lien_envoye: j("12/10") },
+    { id: 7, Etablissement: "ADREC", Formation: "TP Négociateur technico-commercial", Mail_recu: j("15/10"), Lien_envoye: j("16/10"), Fiche_recue: j("22/10"), UAI: "À corriger", Commentaire: "UAI formateur ≠ catalogue (0333233K attendu)" },
     { id: 4, Etablissement: "CAMPUS DU LAC", Formation: "BTS GPME", Mail_recu: j("29/10") },
     { id: 5, Etablissement: "ADREC", Formation: "TP Gestionnaire de paie", Mail_recu: j("15/10"), Lien_envoye: j("16/10"), Fiche_recue: j("22/10"), UAI: "Conforme", RNCP: "Conforme" },
     { id: 6, Etablissement: "PIGIER", Formation: "BTS GPME - en apprentissage", Lieu: "PIGIER BORDEAUX (33)", Publiee: "Publiée", Origine: "Tableau initial", g_ta_cod: "34388" },
@@ -358,4 +432,4 @@ if (typeof window !== "undefined") {
   });
 }
 
-if (typeof module !== "undefined") module.exports = { construire, analyser };
+if (typeof module !== "undefined") module.exports = { construire, analyser, aRelancer, tachesSaio };
