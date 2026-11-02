@@ -6,6 +6,18 @@ const JOUR = 86400;
 const DELAI_FICHE = 10;    // jours après l'envoi du lien avant de relancer pour la fiche
 const DELAI_RELANCE = 7;   // une relance masque l'établissement pendant ce nombre de jours
 const ACADEMIE = "Bordeaux";
+// Campagne Parcoursup en cours : de septembre N à août N+1 on prépare la rentrée N+1
+function rentreeCible() { const d = new Date(); return d.getMonth() >= 8 ? d.getFullYear() + 1 : d.getFullYear(); }
+
+// Problèmes de la formation dans l'export Carif-Oref qui empêchent la publication sur Parcoursup
+function problemesCarif(c) {
+  if (!c) return [];
+  const pb = [], cible = String(rentreeCible());
+  if (/archiv/i.test(c.Etat_diplome || "")) pb.push("diplôme archivé (code expiré) : mise à conformité RNCP / code diplôme");
+  const ans = String(c.Annee_de_rentree || "").split(/[,;\s]+/).filter(Boolean);
+  if (ans.length && !ans.includes(cible)) pb.push(`pas de session pour la rentrée ${cible} (dernière : ${ans.sort().slice(-1)[0]}) : dates à mettre à jour`);
+  return pb;
+}
 const ETAPES = [
   { col: "Mail_recu", nom: "Mail reçu", type: "date" },
   { col: "Lien_envoye", nom: "Lien envoyé", type: "date" },
@@ -98,7 +110,7 @@ function analyser(r, maintenant) {
     r.Lien_envoye ? etat("done", dateCourte(r.Lien_envoye)) : etat(ficheDate ? "done" : "todo"),
     ficheDate ? etat("done", dateCourte(ficheDate)) : etat("todo"),
     verif(r.UAI), verif(r.RNCP),
-    cat ? etat("done") : (fiche && CATALOGUE.length ? etat("ko") : etat("todo")),
+    cat ? (problemesCarif(cat).length ? etat("ko") : etat("done")) : (fiche && CATALOGUE.length ? etat("ko") : etat("todo")),
     r.Publiee === "Publiée" ? etat("done", dateCourte(r.Publiee_le)) : etat("todo"),
   ];
   const base = { e, fiche, cat };
@@ -119,7 +131,8 @@ function analyser(r, maintenant) {
   }
   if (e[3].s === "todo") return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Vérifier l'UAI (voir la fiche)" } };
   if (e[4].s === "todo") return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Vérifier le RNCP (voir la fiche)" } };
-  if (e[5].s === "ko") return { ...base, cat_: "relance", next: { cls: "ko", titre: "À relancer", txt: "Absente de l'export Carif-Oref : à déclarer auprès du Carif-Oref" } };
+  if (e[5].s === "ko") return { ...base, cat_: "relance", next: { cls: "ko", titre: "À corriger dans le Carif-Oref",
+    txt: cat ? problemesCarif(cat).join(" · ") : "Absente de l'export Carif-Oref : à déclarer auprès du Carif-Oref" } };
   if (e[5].s === "todo") return { ...base, cat_: "attente", next: { cls: "warn", titre: "En attente", txt: "Importer l'export Carif-Oref pour vérifier" } };
   return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Publier au catalogue national" } };
 }
@@ -363,7 +376,10 @@ function ouvrirEtape(bouton, id, i) {
     pop.innerHTML = `<b>${esc(r.Formation)} — Carif-Oref</b><p class="rien">Cette étape se vérifie automatiquement : elle est validée quand la formation de la fiche
       est trouvée dans l'export Carif-Oref (même organisme + même RNCP ou code diplôme).</p>
       <p>${f.cat ? "✓ Trouvée dans l'export : <b>" + esc(f.cat.Libelle_formation) + "</b> (" + esc(f.cat.Formateur_RS) + ")"
-        : f.fiche ? (CATALOGUE.length ? "✗ Non trouvée dans l'export importé." : "Aucun export importé.") : "Fiche pas encore reçue."}</p>`;
+        : f.fiche ? (CATALOGUE.length ? "✗ Non trouvée dans l'export importé." : "Aucun export importé.") : "Fiche pas encore reçue."}</p>
+      ${f.cat ? `<ul class="controles" style="columns:1">
+        <li>${/archiv/i.test(f.cat.Etat_diplome || "") ? '<span class="ko">✗</span>' : f.cat.Etat_diplome ? '<span class="ok">✓</span>' : "?"} Diplôme : ${esc(f.cat.Etat_diplome || "état inconnu (réimporter l'export)")}</li>
+        <li>${String(f.cat.Annee_de_rentree || "").includes(String(rentreeCible())) ? '<span class="ok">✓</span>' : '<span class="ko">✗</span>'} Rentrées des sessions : ${esc(f.cat.Annee_de_rentree || "?")} (attendu : ${rentreeCible()})</li></ul>` : ""}`;
     placer(pop, bouton);
     return;
   }
@@ -593,6 +609,8 @@ function voirFiche(id) {
     ["Code RNCP", fi.Code_RNCP, c.Code_RNCP, chiffres(fi.Code_RNCP) === c._rncp],
     ["Code diplôme", fi.Code_diplome, c.Code_scolarite, code(fi.Code_diplome).padStart(8, "0") === c._cfd],
     ["Code postal", fi.Code_postal, c.CP, String(fi.Code_postal || "").slice(0, 5) === String(c.CP || "").slice(0, 5)],
+    ["État du diplôme", "", c.Etat_diplome || "inconnu (réimporter l'export)", !/archiv/i.test(c.Etat_diplome || "")],
+    ["Rentrées des sessions", "rentrée " + rentreeCible() + " attendue", c.Annee_de_rentree, String(c.Annee_de_rentree || "").includes(String(rentreeCible()))],
   ] : null;
   const champ = (l, v) => `<div class="champ"><span>${esc(l)}</span><b>${esc(Array.isArray(v) ? v.filter(x => x !== "L").join(", ") : v === true ? "Oui" : v === false ? "Non" : v ?? "")}</b></div>`;
   const pop = nouvellePop("pop-fiche");
@@ -634,7 +652,7 @@ function voirFiche(id) {
 const COLS_EXPORT = { "CLE MINISTERES EDUCATIFS": "Cle_ME", "Catalogue Général National": "Statut_catalogue", "Libelle_formation": "Libelle_formation",
   "Gestionnaire_RS": "Gestionnaire_RS", "Siret_gestionnaire": "Siret_gestionnaire", "Formateur_RS": "Formateur_RS", "Siret_formateur": "Siret_formateur",
   "UAI validée référentiel": "UAI_validee", "Code_RNCP": "Code_RNCP", "Code_scolarite": "Code_scolarite", "Annee_de_rentree": "Annee_de_rentree",
-  "Adresse_de_formation": "Adresse_de_formation", "CP": "CP", "Ville": "Ville", "Ref_formation_Carif": "Ref_formation_Carif", "Date_MAJ": "Date_MAJ" };
+  "Adresse_de_formation": "Adresse_de_formation", "CP": "CP", "Ville": "Ville", "Ref_formation_Carif": "Ref_formation_Carif", "Date_MAJ": "Date_MAJ", "Etat_diplome": "Etat_diplome" };
 
 function texteCellule(v) {
   if (v === null || v === undefined) return "";
@@ -707,6 +725,10 @@ async function charger() {
       await grist.docApi.applyUserActions(manquantes.map(([c, l]) => ["AddColumn", "Suivi", c, { type: "Text", label: l, isFormula: false }]));
       for (const [c] of manquantes) s[c] = s.id.map(() => null);
     }
+    if (c && !("Etat_diplome" in c)) {
+      await grist.docApi.applyUserActions([["AddColumn", "Catalogue", "Etat_diplome", { type: "Text", label: "Etat_diplome", isFormula: false }]]);
+      c.Etat_diplome = c.id.map(() => null);
+    }
     ROWS = lignes(s); FICHES = lignes(f); CATALOGUE = lignes(c); PARAM = lignes(p)[0] || {}; INDEX = null; DEMO = false;
   } catch (e) {
     const ban = document.getElementById("bandeaux");
@@ -732,8 +754,8 @@ function demo() {
     { id: 2, Code: "F-0003", Organisme: "TALIS", Siret: "33851631300099", Libelle_formation: "BTS NDRC", Code_RNCP: "38368", Code_diplome: "32031212", UAI_lieu: "0333460G", UAI_formateur: "0333233K", UAI_gestionnaire: "0333460G", Code_postal: "33000", Commune: "Bordeaux", Certification: ["L", "Qualiopi"], Num_Qualiopi: "", Referencee_Carif_Oref: "Oui", Statut: "Groupe autonome", Duree: "2 ans", Attestation: true, Signataire: "S. Martin", Recu_le: j("16/10") },
   ];
   CATALOGUE = [
-    { Cle_ME: "x1", Statut_catalogue: "Publiée", Libelle_formation: "BTS Management Commercial Opérationnel", Formateur_RS: "TALIS BORDEAUX", Siret_formateur: "33851631300099", Siret_gestionnaire: "33851631300099", UAI_validee: "0333460G", Code_RNCP: "38362", Code_scolarite: "32031213", CP: "33000", Ville: "Bordeaux", Date_MAJ: "02/11/2026" },
-    { Cle_ME: "x2", Statut_catalogue: "Publiée", Libelle_formation: "BTS Négociation et digitalisation de la relation client", Formateur_RS: "TALIS BORDEAUX", Siret_formateur: "33851631300099", Siret_gestionnaire: "33851631300099", UAI_validee: "0333460G", Code_RNCP: "38368", Code_scolarite: "32031212", CP: "33000", Ville: "Bordeaux", Date_MAJ: "02/11/2026" },
+    { Cle_ME: "x1", Statut_catalogue: "Publiée", Libelle_formation: "BTS Management Commercial Opérationnel", Formateur_RS: "TALIS BORDEAUX", Siret_formateur: "33851631300099", Siret_gestionnaire: "33851631300099", UAI_validee: "0333460G", Code_RNCP: "38362", Code_scolarite: "32031213", CP: "33000", Ville: "Bordeaux", Date_MAJ: "02/11/2026", Etat_diplome: "Diplôme en cours de validité", Annee_de_rentree: "2026, 2027" },
+    { Cle_ME: "x2", Statut_catalogue: "Publiée", Libelle_formation: "BTS Négociation et digitalisation de la relation client", Formateur_RS: "TALIS BORDEAUX", Siret_formateur: "33851631300099", Siret_gestionnaire: "33851631300099", UAI_validee: "0333460G", Code_RNCP: "38368", Code_scolarite: "32031212", CP: "33000", Ville: "Bordeaux", Date_MAJ: "02/11/2026", Etat_diplome: "Diplôme en état archivé", Annee_de_rentree: "2025, 2026" },
   ];
   PARAM = { URL_formulaire: "https://exemple/forms/abc" };
   ROWS.forEach(r => { r.Lien_fiche = PARAM.URL_formulaire + "?Code=" + r.Code; });
