@@ -109,9 +109,17 @@ function construire(t, maintenant = Date.now() / 1000) {
     else g.formations.push({ nom: f.Libelle_formation || "Fiche sans libellé", demande: dem, fiche: f });
   }
 
-  // 3. étapes et prochaine action de chaque formation
+  // 3. formations déjà sur Parcoursup (tableau de suivi d'origine)
+  for (const fp of lignes(t.Formations)) {
+    const g = groupe(fp.Etablissement || 0);
+    const deja = g.formations.find(x => x.fiche && fp.g_ta_cod && String(x.fiche.g_ta_cod || "") === String(fp.g_ta_cod));
+    if (deja) { deja.parcoursup = fp; continue; }
+    g.formations.push({ nom: fp.Intitule || "Formation " + fp.g_ta_cod, lieu: fp.Site_campus || "", parcoursup: fp, demande: null, fiche: null });
+  }
+
+  // 4. étapes et prochaine action de chaque formation
   for (const g of groupes.values()) {
-    for (const x of g.formations) Object.assign(x, etapes(x, maintenant));
+    for (const x of g.formations) Object.assign(x, x.parcoursup && !x.fiche && !x.demande ? surParcoursup(x.parcoursup) : etapes(x, maintenant));
     g.formations.sort((a, b) => ordre(a) - ordre(b) || a.nom.localeCompare(b.nom));
   }
 
@@ -156,6 +164,14 @@ function etapes(x, maintenant) {
   return { e, cat, next };
 }
 
+function surParcoursup(fp) {
+  const c = fp.Conformite || "Non contrôlé";
+  const e = ETAPES.map(() => ({ s: "done" }));
+  e[5] = { s: "done", t: fp.g_ta_cod ? "n° " + fp.g_ta_cod : "" };
+  const cls = c === "Non conforme" ? "ko" : c === "À surveiller" ? "warn" : c === "Conforme" ? "ok" : "";
+  return { e, cat: "parcoursup", next: { cls, titre: "Sur Parcoursup — affichage", txt: c }, lien: fp.Lien_Parcoursup || "" };
+}
+
 function verif(v) {
   if (v === "Conforme") return { s: "done" };
   if (v === "À corriger") return { s: "ko" };
@@ -163,7 +179,7 @@ function verif(v) {
 }
 
 function ordre(x) {
-  return { action: 0, attente: 1, autre: 2, publie: 3 }[x.cat] ?? 4;
+  return { action: 0, attente: 1, autre: 2, publie: 3, parcoursup: 4 }[x.cat] ?? 5;
 }
 
 // ------------------------------------------------------------------ affichage
@@ -185,12 +201,13 @@ function rendre() {
     <div class="kpi"><b>${toutes.length}</b><span>formations</span></div>
     <div class="kpi ko"><b>${n("action")}</b><span>action requise</span></div>
     <div class="kpi warn"><b>${n("attente")}</b><span>fiche attendue</span></div>
-    <div class="kpi ok"><b>${n("publie")}</b><span>publiées</span></div>`;
+    <div class="kpi ok"><b>${n("publie")}</b><span>publiées</span></div>
+    <div class="kpi"><b>${n("parcoursup")}</b><span>déjà sur Parcoursup</span></div>`;
   const st = document.getElementById("sous-titre");
   if (st) st.textContent = (DONNEES.campagne ? "Campagne Parcoursup " + DONNEES.campagne : "Toutes campagnes") +
     (DONNEES.dernierImport ? " · catalogue importé le " + new Date(DONNEES.dernierImport * 1000).toLocaleDateString("fr-FR") : " · aucun export du catalogue importé");
   const ban = document.getElementById("bandeaux");
-  if (ban) ban.innerHTML = (DONNEES.demo ? `<div class="demo">Mode démonstration : données fictives (le widget n'est pas ouvert dans Grist).</div>` : "") +
+  if (ban) ban.innerHTML = (DONNEES.alerte ? `<div class="banner" style="background:var(--red-bg);color:var(--red)">${esc(DONNEES.alerte)}</div>` : "") + (DONNEES.demo ? `<div class="demo">Mode démonstration : données fictives (le widget n'est pas ouvert dans Grist).</div>` : "") +
     (DONNEES.mailsATraiter ? `<div class="banner">${DONNEES.mailsATraiter} mail${DONNEES.mailsATraiter > 1 ? "s" : ""} de demande à traiter : page « 1. Mails reçus ».</div>` : "");
 
   const q = norm(recherche);
@@ -199,14 +216,15 @@ function rendre() {
     if (!fs.length) return "";
     const tot = g.formations.length;
     const c = k => g.formations.filter(f => f.cat === k).length;
-    const pub = c("publie"), act = c("action"), att = c("attente"), aut = tot - pub - act - att;
+    const ps = c("parcoursup"), pub = c("publie") + ps, act = c("action"), att = c("attente"), aut = tot - pub - act - att;
     const seg = (k, col) => k ? `<i style="width:${100 * k / tot}%;background:${col}"></i>` : "";
     const pl = k => k > 1 ? "s" : "";
     const tags = [
       act ? `<span class="tag ko">${act} action${pl(act)} requise${pl(act)}</span>` : "",
       att ? `<span class="tag warn">${att} fiche${pl(att)} attendue${pl(att)}</span>` : "",
       aut ? `<span class="tag wait">${aut} en attente</span>` : "",
-      pub ? `<span class="tag ok">${pub} publiée${pl(pub)}</span>` : "",
+      pub - ps ? `<span class="tag ok">${pub - ps} publiée${pl(pub - ps)}</span>` : "",
+      ps ? `<span class="tag wait">${ps} déjà sur Parcoursup</span>` : "",
     ].join("");
     const ouvert = ouverts.has(g.id) || q || filtre !== "tous";
     const lignesHtml = fs.map(f => {
@@ -216,8 +234,8 @@ function rendre() {
         return `<div class="step ${s}"><div class="dot">${ic}</div>${nom}${f.e[i].t ? `<em>${esc(f.e[i].t)}</em>` : ""}</div>`;
       }).join("");
       return `<div class="form${f.refusee ? " refusee" : ""}">
-        <div class="form-name"><b>${esc(f.nom)}</b><span>${esc(f.fiche ? (f.fiche.Commune || "") : "fiche non reçue")}</span></div>
-        <div class="steps">${steps}</div>
+        <div class="form-name"><b>${esc(f.nom)}</b><span>${f.lien ? `<a href="${esc(f.lien)}" target="_blank" rel="noopener">fiche Parcoursup</a>${f.lieu ? " · " + esc(f.lieu) : ""}` : esc(f.fiche ? (f.fiche.Commune || "") : "fiche non reçue")}</span></div>
+        ${f.cat === "parcoursup" ? `<div class="steps" style="color:var(--muted);font-size:13px">Déjà ouverte sur Parcoursup${f.parcoursup && f.parcoursup.g_ta_cod ? " (n° " + esc(f.parcoursup.g_ta_cod) + ")" : ""} — pas de demande cette campagne</div>` : `<div class="steps">${steps}</div>`}
         <div class="next ${f.next.cls}"><b>${esc(f.next.titre)}</b>${esc(f.next.txt)}</div>
       </div>`;
     }).join("");
@@ -243,14 +261,21 @@ function rendre() {
 
 // ------------------------------------------------------------------ données Grist (ou démonstration)
 
-const TABLES = ["Parametres", "Etablissements", "Demandes", "Fiches", "Mails", "Accueil"];
+const TABLES = ["Parametres", "Etablissements", "Demandes", "Fiches", "Mails", "Accueil", "Formations"];
 
 async function charger() {
   const t = {};
+  let refus = 0, absentes = [];
   for (const nom of TABLES) {
-    try { t[nom] = await grist.docApi.fetchTable(nom); } catch (e) { t[nom] = null; }
+    try { t[nom] = await grist.docApi.fetchTable(nom); }
+    catch (e) {
+      t[nom] = null;
+      if (/access|denied|permission|not allowed/i.test(String(e && e.message || e))) refus++; else absentes.push(nom);
+    }
   }
   DONNEES = construire(t);
+  if (refus) DONNEES.alerte = "Le widget n'a pas l'accès complet au document. Dans le panneau de droite (onglet « Personnalisée »), choisissez « Accès complet au document » puis acceptez.";
+  else if (!t.Etablissements || !t.Fiches) DONNEES.alerte = "Ce document ne contient pas les tables du suivi (" + absentes.join(", ") + "). Le widget doit être ajouté dans le document « Suivi_formations_apprentissage ».";
   rendre();
 }
 
