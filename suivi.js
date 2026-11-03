@@ -718,16 +718,41 @@ function preparerExport(lignesBrutes) {
   });
 }
 
-async function importerExport(fichier) {
+// Page de partage CAP Métiers où l'export Apprentissage est toujours déposé (modifiable dans Paramètres : colonne URL_export)
+const URL_EXPORT = "https://cirrus.cap-metiers.pro/s/fTkMqHbXYGertCs";
+function urlExport() { return String(PARAM.URL_export || URL_EXPORT).replace(/\/+$/, ""); }
+
+// Bouton « Importer l'export » : on tente de récupérer le fichier directement sur la page CAP Métiers ;
+// si le navigateur ou le réseau le bloque, on propose d'ouvrir la page puis de choisir le fichier téléchargé.
+async function importerDepuisCapMetiers() {
+  const ban = document.getElementById("bandeaux");
+  if (ban) ban.innerHTML = `<div class="banner">Récupération de l'export sur la page CAP Métiers…</div>`;
+  let donnees = null;
+  try {
+    const ctl = new AbortController(), minuterie = setTimeout(() => ctl.abort(), 30000);
+    const rep = await fetch(urlExport() + "/download", { signal: ctl.signal });
+    clearTimeout(minuterie);
+    if (rep.ok) donnees = await rep.arrayBuffer();
+  } catch (e) { donnees = null; }
+  if (donnees && await importerExport(donnees, true)) return;
+  if (ban) ban.innerHTML = `<div class="banner">Récupération automatique impossible depuis ce poste.
+    <a href="${esc(urlExport())}" target="_blank" rel="noopener">① Ouvrir la page CAP Métiers</a> et télécharger l'export, puis
+    <button class="btn petit" id="choisir-export">② Choisir le fichier téléchargé</button></div>`;
+  const b = document.getElementById("choisir-export"), fic = document.getElementById("fichier-export");
+  if (b && fic) b.addEventListener("click", ev => { ev.stopPropagation(); fic.click(); });
+}
+
+// fichier : File (choisi à la main) ou ArrayBuffer (téléchargé). silencieux : renvoie false sans message si ce n'est pas un export lisible.
+async function importerExport(fichier, silencieux) {
   const ban = document.getElementById("bandeaux");
   const info = t => { if (ban) ban.innerHTML = `<div class="banner">${esc(t)}</div>`; };
   try {
     info("Lecture de l'export…");
-    const wb = XLSX.read(await fichier.arrayBuffer(), { type: "array" });
+    const wb = XLSX.read(fichier instanceof ArrayBuffer ? fichier : await fichier.arrayBuffer(), { type: "array" });
     const brut = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null, raw: true });
     const rows = preparerExport(brut);
-    if (!rows.length) { info("Aucune formation de l'académie de " + ACADEMIE + " dans ce fichier : est-ce bien l'export Apprentissage ?"); return; }
-    if (DEMO) { CATALOGUE = rows; INDEX = null; rendre(); return; }
+    if (!rows.length) { if (silencieux) return false; info("Aucune formation de l'académie de " + ACADEMIE + " dans ce fichier : est-ce bien l'export Apprentissage ?"); return false; }
+    if (DEMO) { CATALOGUE = rows; INDEX = null; rendre(); return true; }
     info(`Import de ${rows.length} formations…`);
     const ids = CATALOGUE.map(c => c.id);
     const acts = [];
@@ -739,8 +764,11 @@ async function importerExport(fichier) {
     }
     await actions(acts);
     await charger();
+    return true;
   } catch (e) {
+    if (silencieux) return false;
     info("Échec de l'import : " + (e && e.message || e));
+    return false;
   }
 }
 
@@ -808,7 +836,7 @@ if (typeof window !== "undefined") {
     if (nouv) nouv.addEventListener("click", ev => { ev.stopPropagation(); ouvrirAjout(""); });
     const imp = document.getElementById("importer"), fic = document.getElementById("fichier-export");
     if (imp && fic) {
-      imp.addEventListener("click", () => fic.click());
+      imp.addEventListener("click", ev => { ev.stopPropagation(); importerDepuisCapMetiers(); });
       fic.addEventListener("change", () => { if (fic.files && fic.files[0]) importerExport(fic.files[0]); fic.value = ""; });
     }
     document.addEventListener("click", () => fermerPop());
