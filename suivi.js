@@ -90,7 +90,7 @@ function indexer() {
     c._sf = chiffres(c.Siret_formateur).padStart(14, "0"); c._sg = chiffres(c.Siret_gestionnaire).padStart(14, "0");
     c._uai = code(c.UAI_validee); c._rncp = chiffres(c.Code_RNCP); c._cfd = code(c.Code_scolarite).padStart(8, "0");
     ajoute(INDEX.siret, c._sf, c); if (c._sg !== c._sf) ajoute(INDEX.siret, c._sg, c); ajoute(INDEX.uai, c._uai, c);
-    c._torg = jetons(c.Formateur_RS, c.Gestionnaire_RS); c._tform = jetons(c.Libelle_formation, c.Diplome || "");
+    c._torg = jetons(c.Formateur_RS, c.Gestionnaire_RS); c._corg = colle(c.Formateur_RS) + "|" + colle(c.Gestionnaire_RS); c._tform = jetons(c.Libelle_formation, c.Diplome || "");
     c._tlieu = jetons(c.Formateur_RS, c.Ville, c.Adresse_de_formation);
   }
 }
@@ -124,6 +124,10 @@ const MOTS_VIDES = new Set("de du des la le les et en a l d au aux pour par sur 
 function jetons(...txt) {
   return new Set(txt.join(" ").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length > 2 && !MOTS_VIDES.has(t)));
 }
+// nom « collé » : « NO SCHOOL » et « NOSCHOOL » donnent tous deux « noschool »
+const colle = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+// le nom de l'établissement correspond-il à l'organisme, une fois les espaces et la ponctuation retirés ?
+const memeNomColle = (nom, c) => { const n = colle(nom); return n.length >= 4 && (c._corg || "").includes(n); };
 const part = (a, b) => { if (!a.size) return 0; let n = 0; for (const t of a) if (b.has(t)) n++; return n / a.size; };
 const estHistorique = r => !!(r.Origine && !r.Mail_recu && !ficheDe(r));
 
@@ -140,8 +144,10 @@ function candidatsHistorique(r) {
   const precision = jetons(r.Lieu || "", (String(r.Formation || "").match(/\(([^)]*)\)\s*(- en apprentissage)?\s*$/i) || [])[1] || "");
   const form = jetons(intitule);
   const liste = [];
+  // si l'organisme existe sous son nom collé (« NOSCHOOL »), on s'en tient à lui (sinon « school » attraperait toutes les écoles)
+  const colleTrouve = CATALOGUE.some(c => memeNomColle(r.Etablissement, c));
   for (const c of CATALOGUE) {
-    const se = part(etab, c._torg);
+    const se = colleTrouve ? (memeNomColle(r.Etablissement, c) ? 1 : 0) : part(etab, c._torg);
     if (se < 0.5) continue;
     const sf = part(form, c._tform);
     if (sf < 0.5) continue;
@@ -733,7 +739,9 @@ function rapprocher(id, recherche) {
   let liste;
   if (recherche && recherche.trim().length >= 3) {
     const q = jetons(recherche);
-    liste = CATALOGUE.map(c => ({ c, score: part(q, new Set([...c._torg, ...c._tform, ...c._tlieu])) })).filter(x => x.score >= 0.99 || (q.size > 1 && x.score >= 0.6))
+    const qc = colle(recherche), parNom = qc.length >= 4 ? CATALOGUE.filter(c => c._corg.includes(qc)) : [];
+    liste = parNom.length ? parNom.map(c => ({ c, score: 1 }))
+      : CATALOGUE.map(c => ({ c, score: part(q, new Set([...c._torg, ...c._tform, ...c._tlieu])) })).filter(x => x.score >= 0.99 || (q.size > 1 && x.score >= 0.6))
       .sort((a, b) => b.score - a.score).slice(0, 25);
   } else {
     const fi = ficheDe(r);
