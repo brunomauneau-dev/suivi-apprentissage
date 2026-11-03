@@ -562,18 +562,16 @@ async function renommerEtab(ancien) {
   await bulkMaj(ids, { Etablissement: nouveau });
 }
 
-// Petit menu « ⋯ » d'une formation (note, renommer, supprimer — supprimer seulement pour les nouvelles demandes)
+// Petit menu « ⋯ » d'une formation (renommer, supprimer — supprimer seulement pour les nouvelles demandes)
 function boutonMenuF(r, supprimable) {
-  return `<button class="menu-etab menu-f" data-menu-f="${r.id}"${supprimable ? ' data-supprimable="1"' : ""} title="Note, renommer…">⋯</button>`;
+  return `<button class="menu-etab menu-f" data-menu-f="${r.id}"${supprimable ? ' data-supprimable="1"' : ""} title="Renommer${supprimable ? ", supprimer" : ""}">⋯</button>`;
 }
 function menuFormation(id, ancre, supprimable) {
   const pop = nouvellePop("pop-menu");
-  pop.innerHTML = `<button class="item" id="m-note">💬 Ajouter une note</button>
-    <button class="item" id="m-renom-f">✎ Renommer la formation</button>
+  pop.innerHTML = `<button class="item" id="m-renom-f">✎ Renommer la formation</button>
     ${supprimable ? `<button class="item rouge" id="m-suppr-f">🗑 Supprimer la formation</button>` : ""}`;
   placer(pop, ancre);
   const on = (bid, f) => { const b = document.getElementById(bid); if (b) b.addEventListener("click", ev => { ev.stopPropagation(); fermerPop(); f(); }); };
-  on("m-note", () => ouvrirNotes(id));
   on("m-renom-f", () => renommerFormation(id));
   on("m-suppr-f", () => supprimerFormation(id));
 }
