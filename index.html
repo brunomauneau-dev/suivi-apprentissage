@@ -6,7 +6,8 @@
 <title>Suivi des référencements</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js" defer></script>
 <script src="lib/xlsx.full.min.js" defer></script>
-<script src="suivi.js?v=34" defer></script>
+<script src="controle.js?v=2" defer></script>
+<script src="suivi.js?v=35" defer></script>
 <style>
   :root {
     --bg: #f6f6f6; --card: #ffffff; --text: #1e1e1e; --muted: #666; --line: #e5e5e5;
@@ -189,6 +190,36 @@
   .suivi-etapes .action.ko b { color: var(--red); } .suivi-etapes .action.warn b { color: var(--amber); } .suivi-etapes .action.ok b { color: var(--green); } .suivi-etapes .action.wait b { color: #555; }
   .tab-panneau.attente .motif { background: var(--grey-bg); color: #444; }
   .tab-panneau .depuis { white-space: nowrap; color: var(--muted); font-size: 12px; }
+  /* contrôle d'affichage */
+  #liste.controle { display: block; }
+  .c-grille { display: grid; grid-template-columns: 360px 1fr; gap: 14px; align-items: start; }
+  .card-c { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+  .c-liste { max-height: 78vh; overflow: auto; padding-bottom: 6px; }
+  .c-etab { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding: 10px 14px 2px; }
+  .c-item { display: flex; gap: 10px; width: 100%; text-align: left; border: 0; background: none; padding: 8px 14px; cursor: pointer; font: inherit; color: inherit; border-bottom: 1px solid #f3f3f3; }
+  .c-item b { display: block; font-size: 13px; } .c-item small { display: block; color: var(--muted); font-size: 11.5px; }
+  .c-item:hover { background: #f7f8fd; } .c-item.sel { background: #eef1fb; box-shadow: inset 3px 0 0 var(--blue); }
+  .c-pt { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex: none; background: #cfd3da; }
+  .c-pt.ok { background: var(--green); } .c-pt.ko { background: var(--red); } .c-pt.surv, .c-pt.incomplet { background: #f5a000; }
+  .c-det { padding: 16px 20px; } .c-det h2 { margin: 0; font-size: 17px; } .c-sous { color: var(--muted); margin: 2px 0 10px; }
+  .c-liens { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 4px; }
+  .c-liens a.btn { text-decoration: none; } .c-liens input { flex: 1; min-width: 240px; padding: 6px 8px; border: 1px solid #cfd5df; border-radius: 6px; font: inherit; font-size: 12px; color: #555; }
+  .c-table { width: 100%; border-collapse: collapse; } .c-table td { padding: 10px 6px; border-top: 1px solid #f0f0f0; vertical-align: top; }
+  .c-crit b { display: block; } .c-crit small { color: var(--muted); } .c-choix { width: 330px; text-align: right; }
+  .seg { display: inline-flex; border: 1px solid #d5d9e1; border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-right: 1px solid #d5d9e1; background: #fff; padding: 6px 11px; font: 600 12px inherit; color: #555; cursor: pointer; }
+  .seg button:last-child { border-right: 0; } .seg button:hover { background: #f4f5f8; }
+  .seg button.on.ok { background: var(--green-bg); color: var(--green); } .seg button.on.ko { background: var(--red-bg); color: var(--red); }
+  .seg button.on.nt { background: var(--amber-bg); color: var(--amber); } .seg button.on.info { background: #e8edfb; color: var(--blue); }
+  .c-bas { display: grid; grid-template-columns: 1fr 280px; gap: 14px; margin-top: 12px; }
+  .c-bas textarea { width: 100%; min-height: 70px; border: 1px solid #cfd5df; border-radius: 7px; padding: 7px; font: inherit; margin-top: 4px; }
+  .c-capt { border: 1px dashed #b9c0cc; border-radius: 8px; padding: 10px; text-align: center; cursor: text; }
+  .c-capt:focus { outline: 2px solid var(--blue); } .c-capt img { max-width: 100%; max-height: 110px; display: block; margin: 6px auto; border-radius: 4px; }
+  .c-capt small { display: block; color: var(--muted); margin-top: 4px; }
+  .c-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+  .res.ok { color: var(--green); } .res.ko { color: var(--red); } .res.warn { color: var(--amber); } .res.wait { color: var(--muted); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  @media (max-width: 900px) { .c-grille, .c-bas { grid-template-columns: 1fr; } .c-choix { width: auto; text-align: left; } }
 </style>
 </head>
 <body>

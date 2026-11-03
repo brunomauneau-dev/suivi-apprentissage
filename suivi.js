@@ -156,7 +156,7 @@ function candidatsHistorique(r) {
 }
 
 // Rapproche automatiquement les cas sûrs (une seule fois par chargement)
-let RAPPRO_FAIT = false;
+let RAPPRO_FAIT = false, LIENS_FAITS = false;
 async function rapprocherAuto() {
   if (RAPPRO_FAIT || !CATALOGUE.length) return false;
   RAPPRO_FAIT = true;
@@ -299,11 +299,12 @@ async function ajouter(liste) {
 
 let filtre = "tous", recherche = "";
 let onglet = "demandes";
-try { onglet = localStorage.getItem("suivi-onglet") === "ouvertes" ? "ouvertes" : "demandes"; } catch (e) { /* stockage indisponible */ }
+try { const o = localStorage.getItem("suivi-onglet"); onglet = ["ouvertes", "controle"].includes(o) ? o : "demandes"; } catch (e) { /* stockage indisponible */ }
 const PASTILLE = { relance: ["ko", "À relancer"], saio: ["warn", "À faire SAIO"], attente: ["wait", "En attente"], publie: ["ok", "Publiée"], parcoursup: ["ok", "Publiable"], nonpub: ["wait", "Non publiable"] };
 const CHIPS = {
   demandes: [["tous", "Tous"], ["saio", "À faire au SAIO"], ["attente", "En attente de l'établissement"], ["publie", "Publiées"]],
   ouvertes: [["tous", "Tous"], ["parcoursup", "Publiables"], ["nonpub", "Non publiables"], ["saio", "À retrouver dans l'export"]],
+  controle: [["afaire", "À contrôler"], ["ko", "Non conformes"], ["surv", "À surveiller"], ["ok", "Conformes"], ["tous", "Tous"]],
 };
 const ouverts = new Set();
 
@@ -328,7 +329,7 @@ function rendre() {
   }
   const kpis = document.getElementById("kpis");
   const attentes = enAttente(groupes);
-  if (kpis) kpis.innerHTML = onglet === "ouvertes" ? `
+  if (kpis) kpis.innerHTML = onglet === "controle" ? kpisControle() : onglet === "ouvertes" ? `
     <div class="kpi ok"><b>${n("parcoursup")}</b><span>publiables ${rentreeCible()}</span></div>
     <div class="kpi"><b>${n("nonpub")}</b><span>non publiables en l'état</span></div>
     <div class="kpi warn"><b>${n("saio")}</b><span>à retrouver dans l'export</span></div>` : `
@@ -350,9 +351,10 @@ function rendre() {
   const ong = document.getElementById("onglets");
   if (ong) {
     ong.innerHTML = `<button class="onglet${onglet === "demandes" ? " on" : ""}" data-onglet="demandes">Nouvelles demandes <span>${nDem}</span>${badges(false)}</button>
-      <button class="onglet${onglet === "ouvertes" ? " on" : ""}" data-onglet="ouvertes">Formations ouvertes en ${cible - 1} — revérification ${cible} <span>${nOuv}</span>${badges(true)}</button>`;
+      <button class="onglet${onglet === "ouvertes" ? " on" : ""}" data-onglet="ouvertes">Formations ouvertes en ${cible - 1} — revérification ${cible} <span>${nOuv}</span>${badges(true)}</button>
+      <button class="onglet${onglet === "controle" ? " on" : ""}" data-onglet="controle">Contrôle d'affichage${(() => { const n = aControler(); return n ? `<em class="b-warn">${n} à contrôler</em>` : ""; })()}</button>`;
     ong.querySelectorAll("[data-onglet]").forEach(b => b.addEventListener("click", () => {
-      onglet = b.dataset.onglet; filtre = "tous";
+      onglet = b.dataset.onglet; filtre = onglet === "controle" ? "afaire" : "tous";
       try { localStorage.setItem("suivi-onglet", onglet); } catch (e) { /* stockage indisponible */ }
       rendre();
     }));
@@ -366,7 +368,9 @@ function rendre() {
   const q = norm(recherche);
   const garde = (g, f) => (filtre === "tous" || f.cat_ === filtre) && (!q || norm(g.nom).includes(q) || norm(f.r.Formation).includes(q) || norm(f.r.Lieu).includes(q));
   let html;
-  if (onglet === "ouvertes") {
+  if (onglet === "controle") {
+    html = htmlControle(q, filtre);
+  } else if (onglet === "ouvertes") {
     const ordre = { saio: 0, attente: 1, nonpub: 2, relance: 2, parcoursup: 3, publie: 3 };
     html = groupes.map(g => {
       const fs = g.formations.filter(f => garde(g, f))
@@ -416,9 +420,11 @@ function rendre() {
       </section>`;
     }).join("");
   }
+  zone.classList.toggle("controle", onglet === "controle");
   zone.innerHTML = html || `<div class="empty">${(onglet === "ouvertes" ? nOuv : nDem) ? "Aucune formation ne correspond."
     : onglet === "ouvertes" ? "Aucune formation ouverte les années précédentes." : "Aucune nouvelle demande. Cliquez sur « + Nouvelle demande »."}</div>`;
   brancher(zone);
+  if (onglet === "controle") brancherControle(zone);
 }
 
 function enAttente(groupes) {
@@ -448,6 +454,8 @@ function motifsCourts(m) {
 function panneaux(groupes, attentes) {
   const pan = document.getElementById("panneaux");
   if (!pan) return;
+  pan.style.display = onglet === "controle" ? "none" : "";
+  if (onglet === "controle") return;
   const act = attentes;
   const MAX = 6, vus = RELANCES_TOUTES ? act : act.slice(0, MAX);
   const ligneRelance = e => {
@@ -1129,10 +1137,10 @@ async function importerExport(fichier, silencieux) {
 
 async function charger() {
   try {
-    const [s, f, c, p] = await Promise.all(["Suivi", "Fiches", "Catalogue", "Parametres"].map(t => grist.docApi.fetchTable(t).catch(() => null)));
+    const [s, f, c, p, af] = await Promise.all(["Suivi", "Fiches", "Catalogue", "Parametres", "Affichage"].map(t => grist.docApi.fetchTable(t).catch(() => null)));
     if (!s) throw new Error("table « Suivi » introuvable ou accès refusé");
     const manquantes = [["Contact_nom", "Contact (nom)"], ["Contact_tel", "Contact (téléphone)"], ["Contact_email", "Contact (mail)"],
-      ["Motif_UAI", "Correction UAI demandée"], ["Motif_RNCP", "Correction RNCP demandée"], ["Cle_carif", "Formation de l'export (clé)"]]
+      ["Motif_UAI", "Correction UAI demandée"], ["Motif_RNCP", "Correction RNCP demandée"], ["Cle_carif", "Formation de l'export (clé)"], ["Lien_site", "Site de la formation"]]
       .filter(([c]) => !(c in s));
     if (manquantes.length) {
       await grist.docApi.applyUserActions(manquantes.map(([c, l]) => ["AddColumn", "Suivi", c, { type: "Text", label: l, isFormula: false }]));
@@ -1143,7 +1151,11 @@ async function charger() {
       await grist.docApi.applyUserActions(manquantesC.map(k => ["AddColumn", "Catalogue", k, { type: "Text", label: k, isFormula: false }]));
       for (const k of manquantesC) c[k] = c.id.map(() => null);
     }
-    ROWS = lignes(s); FICHES = lignes(f); CATALOGUE = lignes(c); PARAM = lignes(p)[0] || {}; INDEX = null; DEMO = false;
+    if (af && !("Mail_envoye_le" in af)) {
+      await grist.docApi.applyUserActions([["AddColumn", "Affichage", "Mail_envoye_le", { type: "Date", label: "Mail envoyé le", isFormula: false }]]);
+      af.Mail_envoye_le = af.id.map(() => null);
+    }
+    ROWS = lignes(s); FICHES = lignes(f); CATALOGUE = lignes(c); PARAM = lignes(p)[0] || {}; AFFICHAGE = lignes(af); INDEX = null; DEMO = false;
   } catch (e) {
     const ban = document.getElementById("bandeaux");
     if (ban) ban.innerHTML = `<div class="banner" style="background:var(--red-bg);color:var(--red)">Impossible de lire le document (${esc(e && e.message || e)}).
@@ -1151,6 +1163,7 @@ async function charger() {
     return;
   }
   try { if (await rapprocherAuto()) return charger(); } catch (e) { /* rapprochement automatique non bloquant */ }
+  if (!LIENS_FAITS) { LIENS_FAITS = true; if (await completerLiensSites()) return charger(); }
   rendre();
 }
 
@@ -1174,6 +1187,9 @@ function demo() {
   ];
   PARAM = { URL_formulaire: "https://exemple/forms/abc" };
   ROWS.forEach(r => { r.Lien_fiche = PARAM.URL_formulaire + "?Code=" + r.Code; });
+  ROWS.filter(r => r.Publiee === "Publiée" || r.Origine).forEach(r => { r.Lien_site = r.Lien_site || "https://www.exemple-etablissement.fr/formations"; });
+  AFFICHAGE = [{ id: 1, Formation: 1, Mention_exclusivite_PS: "Oui", Mention_hors_PS: "Non", Pieces_non_necessaires: "Non", Entretien_admission: "Oui",
+    Formation_identique_initiale: "Non", Commentaire: "", Date_controle: j("21/10") }];
   INDEX = null;
   rendre();
 }
