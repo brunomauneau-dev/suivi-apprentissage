@@ -522,14 +522,12 @@ function ligneFormation(f) {
   const sous = [];
   if (r.Lieu) sous.push(esc(r.Lieu));
   if (r.Lien_Parcoursup) sous.push(`<a href="${esc(r.Lien_Parcoursup)}" target="_blank" rel="noopener">fiche Parcoursup</a>`);
-  sous.push(`<button class="btn-lien" data-renom="${r.id}">renommer</button>`, `<button class="btn-lien rouge" data-suppr="${r.id}">supprimer</button>`,
-    lienNote(r));
   const couleur = { saio: "warn", attente: "wait", publie: "ok" }[f.cat_] || "wait";
   const titre = f.cat_ === "saio" ? "À faire au SAIO" : f.next.titre;
   const boutons = [f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
     f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : ""].join(" ");
   return `<tr class="ligne-f" data-id="${r.id}">
-    <td class="f-nom"><b>${esc(r.Formation || "(sans intitulé)")}</b><small>${sous.join(" · ")}</small>${resumeNotes(r)}</td>
+    <td class="f-nom"><div class="f-tete"><b>${esc(r.Formation || "(sans intitulé)")}</b>${boutonMenuF(r, true)}</div>${sous.length ? `<small>${sous.join(" · ")}</small>` : ""}${resumeNotes(r)}</td>
     ${cases}
     <td class="action ${couleur}"><b>${esc(titre)}</b><span>${esc(f.next.txt)}</span>${boutons.trim() ? `<div>${boutons}</div>` : ""}</td></tr>`;
 }
@@ -551,9 +549,9 @@ function ligneOuverte(g, f) {
     ses = rok === false ? `${ko} ${d.length ? "dernière : " + d[d.length - 1].txt : "aucune pour " + rentreeCible()}` : rok ? `${ok} ${bonne ? bonne.txt : rentreeCible()}` : "?";
   }
   return `<tr class="ligne-o">
-    <td class="f-nom"><b>${esc(r.Formation || "")}</b><small>${sous.join(" · ")}</small>${resumeNotes(r)}</td>
+    <td class="f-nom"><div class="f-tete"><b>${esc(r.Formation || "")}</b>${boutonMenuF(r, false)}</div>${sous.length ? `<small>${sous.join(" · ")}</small>` : ""}${resumeNotes(r)}</td>
     <td class="export">${export_}</td><td class="ck">${dip}</td><td class="ck">${ses}</td>
-    <td class="statut">${pastille(f)}${lienNote(r)}</td></tr>`;
+    <td class="statut">${pastille(f)}</td></tr>`;
 }
 
 async function renommerEtab(ancien) {
@@ -562,6 +560,33 @@ async function renommerEtab(ancien) {
   const ids = ROWS.filter(r => norm(r.Etablissement) === norm(ancien)).map(r => r.id);
   if (ouverts.has(norm(ancien))) ouverts.add(norm(nouveau));
   await bulkMaj(ids, { Etablissement: nouveau });
+}
+
+// Petit menu « ⋯ » d'une formation (note, renommer, supprimer — supprimer seulement pour les nouvelles demandes)
+function boutonMenuF(r, supprimable) {
+  return `<button class="menu-etab menu-f" data-menu-f="${r.id}"${supprimable ? ' data-supprimable="1"' : ""} title="Note, renommer…">⋯</button>`;
+}
+function menuFormation(id, ancre, supprimable) {
+  const pop = nouvellePop("pop-menu");
+  pop.innerHTML = `<button class="item" id="m-note">💬 Ajouter une note</button>
+    <button class="item" id="m-renom-f">✎ Renommer la formation</button>
+    ${supprimable ? `<button class="item rouge" id="m-suppr-f">🗑 Supprimer la formation</button>` : ""}`;
+  placer(pop, ancre);
+  const on = (bid, f) => { const b = document.getElementById(bid); if (b) b.addEventListener("click", ev => { ev.stopPropagation(); fermerPop(); f(); }); };
+  on("m-note", () => ouvrirNotes(id));
+  on("m-renom-f", () => renommerFormation(id));
+  on("m-suppr-f", () => supprimerFormation(id));
+}
+async function renommerFormation(id) {
+  const r = ROWS.find(x => x.id === id); if (!r) return;
+  const nouveau = (prompt("Nouvel intitulé de la formation :", r.Formation || "") || "").trim();
+  if (nouveau && nouveau !== r.Formation) await maj(id, { Formation: nouveau });
+}
+async function supprimerFormation(id) {
+  const r = ROWS.find(x => x.id === id); if (!r) return;
+  if (!confirm("Supprimer « " + (r.Formation || "") + " » du suivi ?")) return;
+  if (DEMO) { ROWS = ROWS.filter(x => x.id !== id); rendre(); return; }
+  await actions([["RemoveRecord", "Suivi", id]]); await charger();
 }
 
 // Petit menu « ⋯ » d'un établissement
@@ -584,23 +609,12 @@ function brancher(zone) {
   }));
   zone.querySelectorAll("[data-etape]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); ouvrirEtape(b, Number(b.dataset.id), Number(b.dataset.etape)); }));
   zone.querySelectorAll("[data-com]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); ouvrirNotes(Number(b.dataset.com)); }));
-  zone.querySelectorAll("[data-suppr]").forEach(b => b.addEventListener("click", async () => {
-    const id = Number(b.dataset.suppr), r = ROWS.find(x => x.id === id);
-    if (!confirm("Supprimer « " + (r.Formation || "") + " » du suivi ?")) return;
-    if (DEMO) { ROWS = ROWS.filter(x => x.id !== id); rendre(); return; }
-    await actions([["RemoveRecord", "Suivi", id]]); await charger();
-  }));
+  zone.querySelectorAll("[data-menu-f]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); menuFormation(Number(b.dataset.menuF), b, !!b.dataset.supprimable); }));
   zone.querySelectorAll("[data-ajout]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); ouvrirAjout(b.dataset.ajout); }));
   zone.querySelectorAll("[data-contact]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); editerContact(b.dataset.contact, b); }));
   zone.querySelectorAll(".contact a").forEach(a => a.addEventListener("click", ev => ev.stopPropagation()));
   zone.querySelectorAll("[data-renom-etab]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); renommerEtab(b.dataset.renomEtab); }));
   zone.querySelectorAll("[data-menu-etab]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); menuEtab(b.dataset.menuEtab, b, !!b.dataset.demandes); }));
-  zone.querySelectorAll("[data-renom]").forEach(b => b.addEventListener("click", async ev => {
-    ev.stopPropagation();
-    const id = Number(b.dataset.renom), r = ROWS.find(x => x.id === id);
-    const nouveau = (prompt("Nouvel intitulé de la formation :", r.Formation || "") || "").trim();
-    if (nouveau && nouveau !== r.Formation) await maj(id, { Formation: nouveau });
-  }));
   zone.querySelectorAll("[data-mail]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); preparerMail(b.dataset.mail, null, b); }));
   zone.querySelectorAll("[data-fiche]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); voirFiche(Number(b.dataset.fiche)); }));
   zone.querySelectorAll("[data-rappro]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); rapprocher(Number(b.dataset.rappro)); }));

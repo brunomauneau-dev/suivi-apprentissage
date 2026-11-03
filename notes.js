@@ -41,14 +41,15 @@ function enteteNote(n) {
 }
 
 // Sous le nom de la formation : la dernière note et l'accès au fil
+// Sous le nom de la formation : la dernière note sur une ligne, cliquable (ouvre toutes les notes)
 function resumeNotes(r) {
   const ns = notesDe(r.id);
   if (!ns.length) return "";
-  const t = ns[0].Texte || "";
-  return `<div class="com note-derniere"><b>${esc(enteteNote(ns[0]))}</b> : ${esc(t.length > 140 ? t.slice(0, 140) + "…" : t)}
-    ${ns.length > 1 ? ` <button class="btn-lien" data-com="${r.id}">voir les ${ns.length} notes</button>` : ""}</div>`;
+  const n = ns[0], t = String(n.Texte || "").replace(/\s+/g, " ");
+  const d = n.Reprise || !n.Date ? "ancien" : new Date(n.Date * 1000).toLocaleDateString("fr-FR", { timeZone: "UTC", day: "2-digit", month: "2-digit" });
+  return `<button class="bulle-note" data-com="${r.id}" title="${esc(enteteNote(n) + " : " + (n.Texte || ""))}">
+    <span>💬</span><span class="d">${esc(d)}</span><span class="t">${esc(t)}</span>${ns.length > 1 ? `<span class="n">${ns.length} notes</span>` : ""}</button>`;
 }
-function lienNote(r) { return `<button class="btn-lien" data-com="${r.id}">+ note</button>`; }
 
 function ouvrirNotes(id) {
   const r = ROWS.find(x => x.id === id);
