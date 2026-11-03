@@ -205,22 +205,23 @@ function analyser(r, maintenant) {
     return { ...h, cat_: "parcoursup", next: { cls: "ok", titre: "Publiable", txt: `${num} · publiable pour la rentrée ${cible}` } };
   }
   if (r.Publiee === "Publiée") return { ...base, cat_: "publie", next: { cls: "ok", titre: "Terminé", txt: "Publiée au catalogue national" } };
+  const ATT = "En attente de l'établissement";
+  const jours = d => d ? Math.max(0, Math.floor((maintenant - d) / JOUR)) : null;
+  const ficheJ = ficheDate ? jours(ficheDate > 1e11 ? Math.floor(ficheDate / 1000) : ficheDate) : null;
   if (e[3].s === "ko" || e[4].s === "ko") {
-    const statut = v => v === "Conforme" ? "conforme" : v === "À corriger" ? "à corriger" : "à vérifier";
-    return { ...base, cat_: "relance", next: { cls: "ko", titre: "À corriger par l'établissement", txt: `UAI : ${statut(r.UAI)} · RNCP : ${statut(r.RNCP)}` } };
+    const quoi = [e[3].s === "ko" ? "UAI" : "", e[4].s === "ko" ? "RNCP" : ""].filter(Boolean).join(" et ");
+    return { ...base, cat_: "attente", depuis: ficheJ, motif: quoi + " à corriger", next: { cls: "wait", titre: ATT, txt: `${quoi} à corriger` } };
   }
-  if (!r.Lien_envoye && !ficheDate) return { ...base, cat_: "saio", next: { cls: "ko", titre: "À faire au SAIO", txt: "Envoyer le lien de la fiche" } };
+  if (!r.Lien_envoye && !ficheDate) return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Envoyer le lien de la fiche" } };
   if (!ficheDate) {
-    const j = Math.floor((maintenant - r.Lien_envoye) / JOUR);
-    return j >= DELAI_FICHE
-      ? { ...base, cat_: "relance", next: { cls: "ko", titre: "À relancer", txt: `Fiche non reçue (lien envoyé il y a ${j} j)` } }
-      : { ...base, cat_: "attente", next: { cls: "warn", titre: "Fiche attendue", txt: `Lien envoyé il y a ${j} j` } };
+    const j = jours(r.Lien_envoye);
+    return { ...base, cat_: "attente", depuis: j, motif: "fiche à remplir", next: { cls: "wait", titre: ATT, txt: `Fiche à remplir (lien envoyé il y a ${j} j)` } };
   }
   if (e[3].s === "todo") return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Vérifier l'UAI (voir la fiche)" } };
   if (e[4].s === "todo") return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Vérifier le RNCP (voir la fiche)" } };
-  if (e[5].s === "ko") return { ...base, cat_: "relance", next: { cls: "ko", titre: "À corriger dans le Carif-Oref",
-    txt: cat ? problemesCarif(cat).join(" · ") : "Absente de l'export Carif-Oref : à déclarer auprès du Carif-Oref" } };
-  if (e[5].s === "todo") return { ...base, cat_: "attente", next: { cls: "warn", titre: "En attente", txt: "Importer l'export Carif-Oref pour vérifier" } };
+  if (e[5].s === "ko") return { ...base, cat_: "attente", depuis: ficheJ, motif: "Carif-Oref à mettre à jour", next: { cls: "wait", titre: ATT,
+    txt: "Carif-Oref : " + (cat ? problemesCarif(cat).join(" · ").replace(/ → dates à mettre à jour/g, "") : "formation absente de l'export, à déclarer") } };
+  if (e[5].s === "todo") return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Importer l'export Carif-Oref pour vérifier" } };
   return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Publier au catalogue national" } };
 }
 
@@ -269,7 +270,7 @@ let onglet = "demandes";
 try { onglet = localStorage.getItem("suivi-onglet") === "ouvertes" ? "ouvertes" : "demandes"; } catch (e) { /* stockage indisponible */ }
 const PASTILLE = { relance: ["ko", "À relancer"], saio: ["warn", "À faire SAIO"], attente: ["wait", "En attente"], publie: ["ok", "Publiée"], parcoursup: ["ok", "Publiable"], nonpub: ["wait", "Non publiable"] };
 const CHIPS = {
-  demandes: [["tous", "Tous"], ["relance", "À relancer"], ["saio", "À faire SAIO"], ["attente", "En attente"], ["publie", "Publiées"]],
+  demandes: [["tous", "Tous"], ["saio", "À faire au SAIO"], ["attente", "En attente de l'établissement"], ["publie", "Publiées"]],
   ouvertes: [["tous", "Tous"], ["parcoursup", "Publiables"], ["nonpub", "Non publiables"], ["saio", "À retrouver dans l'export"]],
 };
 const ouverts = new Set();
@@ -294,27 +295,26 @@ function rendre() {
       : "Aucun export Carif-Oref importé : cliquez sur « Importer l'export Carif-Oref »";
   }
   const kpis = document.getElementById("kpis");
-  const relances = aRelancer(groupes, maintenant);
+  const attentes = enAttente(groupes);
   if (kpis) kpis.innerHTML = onglet === "ouvertes" ? `
     <div class="kpi ok"><b>${n("parcoursup")}</b><span>publiables ${rentreeCible()}</span></div>
     <div class="kpi"><b>${n("nonpub")}</b><span>non publiables en l'état</span></div>
     <div class="kpi warn"><b>${n("saio")}</b><span>à retrouver dans l'export</span></div>` : `
-    <div class="kpi ko"><b>${relances.filter(x => !x.masque).length}</b><span>établissements à relancer</span></div>
     <div class="kpi warn"><b>${n("saio")}</b><span>à faire au SAIO</span></div>
-    <div class="kpi"><b>${n("attente")}</b><span>en attente</span></div>
-    <div class="kpi ok"><b>${n("publie") + n("parcoursup")}</b><span>terminées</span></div>`;
+    <div class="kpi"><b>${n("attente")}</b><span>en attente des établissements</span></div>
+    <div class="kpi ok"><b>${n("publie")}</b><span>publiées</span></div>`;
   const ban = document.getElementById("bandeaux");
   if (ban) ban.innerHTML = (DEMO ? `<div class="demo">Mode démonstration : données fictives (le widget n'est pas ouvert dans Grist).</div>` : "") +
     (!DEMO && !PARAM.URL_formulaire ? `<div class="banner">Le formulaire de fiche n'est pas encore publié : page « Formulaire fiche » → Publier, puis collez son adresse dans la page « Paramètres ». Les liens à envoyer se créeront alors tout seuls.</div>` : "");
 
-  panneaux(groupes, relances);
+  panneaux(groupes, attentes);
 
   const cible = rentreeCible();
   const nDem = toutes.filter(f => !f.historique).length, nOuv = toutes.filter(f => f.historique).length;
-  const aRel = h => toutes.filter(f => !!f.historique === h && f.cat_ === "relance").length, aSaio = h => toutes.filter(f => !!f.historique === h && f.cat_ === "saio").length;
+  const aSaio = h => toutes.filter(f => !!f.historique === h && f.cat_ === "saio").length;
   const badges = h => h
     ? (aSaio(h) ? `<em class="b-warn">${aSaio(h)} à retrouver</em>` : "")
-    : (aRel(h) ? `<em class="b-ko">${aRel(h)} à relancer</em>` : "") + (aSaio(h) ? `<em class="b-warn">${aSaio(h)} à faire</em>` : "");
+    : (aSaio(h) ? `<em class="b-warn">${aSaio(h)} à faire</em>` : "");
   const ong = document.getElementById("onglets");
   if (ong) {
     ong.innerHTML = `<button class="onglet${onglet === "demandes" ? " on" : ""}" data-onglet="demandes">Nouvelles demandes <span>${nDem}</span>${badges(false)}</button>
@@ -389,16 +389,14 @@ function rendre() {
   brancher(zone);
 }
 
-function aRelancer(groupes, maintenant) {
+function enAttente(groupes) {
   const out = [];
   for (const g of groupes) {
-    const ls = g.formations.filter(f => motifRelance(f));
+    const ls = g.formations.filter(f => f.cat_ === "attente" && !f.historique);
     if (!ls.length) continue;
-    const derniere = Math.max(0, ...ls.map(f => f.r.Relance_le || 0));
-    out.push({ nom: g.nom, lignes: ls.map(f => ({ formation: f.r.Formation, motif: motifRelance(f), com: f.r.Commentaire })), ids: ls.map(f => f.r.id),
-      derniere, masque: derniere && (maintenant - derniere) / JOUR < DELAI_RELANCE });
+    out.push({ nom: g.nom, lignes: ls, depuis: Math.max(0, ...ls.map(f => f.depuis || 0)) });
   }
-  return out.sort((a, b) => a.masque - b.masque || a.nom.localeCompare(b.nom));
+  return out.sort((a, b) => b.depuis - a.depuis || a.nom.localeCompare(b.nom));
 }
 
 let RELANCES_TOUTES = false;
@@ -415,21 +413,21 @@ function motifsCourts(m) {
   return k.length ? k : [m.length > 40 ? m.slice(0, 40) + "…" : m];
 }
 
-function panneaux(groupes, relances) {
+function panneaux(groupes, attentes) {
   const pan = document.getElementById("panneaux");
   if (!pan) return;
-  const act = relances.filter(e => !e.masque), mas = relances.filter(e => e.masque);
+  const act = attentes;
   const MAX = 6, vus = RELANCES_TOUTES ? act : act.slice(0, MAX);
   const ligneRelance = e => {
     const types = new Map();
-    e.lignes.forEach(l => motifsCourts(l.motif).forEach(k => types.set(k, (types.get(k) || 0) + 1)));
+    e.lignes.forEach(f => types.set(f.motif, (types.get(f.motif) || 0) + 1));
     const c = contactDe(e.nom);
     const contact = [c.nom ? esc(c.nom) : "", c.tel ? `<a href="tel:${esc(c.tel.replace(/\s/g, ""))}">${esc(c.tel)}</a>` : "", c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ""].filter(Boolean);
     return `<tr><td><b>${esc(e.nom)}</b><small>${e.lignes.length} formation${e.lignes.length > 1 ? "s" : ""}</small></td>
       <td class="contact-cell">${contact.length ? contact.join("<br>") : `<button class="btn-lien gris" data-contact="${esc(e.nom)}">+ ajouter un contact</button>`}</td>
       <td>${[...types].map(([k, v]) => `<span class="motif">${esc(k)}${e.lignes.length > 1 ? ` <b>${v}</b>` : ""}</span>`).join(" ")}</td>
-      <td class="actions"><button class="btn-lien" data-voir-etab="${esc(e.nom)}">détail</button>
-        <button class="btn petit" data-relance="${e.ids.join(",")}">Relancé aujourd'hui</button></td></tr>`;
+      <td class="depuis">${e.depuis ? `depuis ${e.depuis} j` : "depuis aujourd'hui"}</td>
+      <td class="actions"><button class="btn-lien" data-voir-etab="${esc(e.nom)}">détail</button></td></tr>`;
   };
   // à faire au SAIO : regroupé par action
   const taches = groupes.flatMap(g => g.formations.filter(f => f.cat_ === "saio").map(f => ({ etab: g.nom, f })));
@@ -455,11 +453,10 @@ function panneaux(groupes, relances) {
       ${taches.length ? `<p>${taches.length} formation${taches.length > 1 ? "s" : ""} à retrouver dans l'export Carif-Oref (une seule fois par formation).</p>
         <button class="btn petit" data-voir-filtre="saio">Afficher ces formations</button>` : `<p class="rien">Toutes les formations sont retrouvées dans l'export.</p>`}
     </section>` : `
-    <section class="panneau"><h2>À relancer <span class="compte ${act.length ? "ko" : "ok"}">${act.length} établissement${act.length > 1 ? "s" : ""}</span></h2>
-      ${act.length ? `<table class="tab-panneau">${vus.map(ligneRelance).join("")}</table>
+    <section class="panneau"><h2>En attente des établissements <span class="compte">${act.length}</span></h2>
+      ${act.length ? `<table class="tab-panneau attente">${vus.map(ligneRelance).join("")}</table>
         ${act.length > MAX ? `<button class="btn-lien" id="relances-toutes">${RELANCES_TOUTES ? "Réduire" : `Afficher les ${act.length - MAX} autres établissements`}</button>` : ""}`
-        : `<p class="rien">Personne à relancer pour le moment.</p>`}
-      ${mas.length ? `<p class="rien">Relancés récemment (reviennent après ${DELAI_RELANCE} jours si rien ne bouge) : ${mas.map(e => esc(e.nom) + " le " + dateCourte(e.derniere)).join(", ")}</p>` : ""}
+        : `<p class="rien">Aucun établissement n'a d'action en attente.</p>`}
     </section>
     <section class="panneau"><h2>À faire au SAIO <span class="compte ${taches.length ? "warn" : "ok"}">${taches.length}</span></h2>
       ${taches.length ? `<table class="tab-panneau">${ordreAct.map(([k, ts]) => {
@@ -490,7 +487,7 @@ function panneaux(groupes, relances) {
     filtre = "saio"; recherche = ""; const q = document.getElementById("q"); if (q) q.value = ""; versListe();
   }));
   pan.querySelectorAll("[data-voir-etab]").forEach(b => b.addEventListener("click", () => {
-    recherche = b.dataset.voirEtab; filtre = "relance";
+    recherche = b.dataset.voirEtab; filtre = "tous";
     const q = document.getElementById("q"); if (q) q.value = recherche;
     versListe();
   }));
@@ -527,8 +524,7 @@ function ligneFormation(f) {
   sous.push(`<button class="btn-lien" data-renom="${r.id}">renommer</button>`, `<button class="btn-lien rouge" data-suppr="${r.id}">supprimer</button>`,
     `<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "✎ commentaire" : "+ commentaire"}</button>`);
   const couleur = { relance: "ko", saio: "warn", attente: "wait", publie: "ok" }[f.cat_] || "wait";
-  const titre = f.cat_ === "relance" ? "À relancer" + (f.next.titre && f.next.titre !== "À relancer" ? " — " + f.next.titre.replace(/^À /, "à ") : "")
-    : f.cat_ === "saio" ? "À faire au SAIO" : f.next.titre;
+  const titre = f.cat_ === "saio" ? "À faire au SAIO" : f.next.titre;
   const boutons = [f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
     f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : ""].join(" ");
   return `<tr class="ligne-f" data-id="${r.id}">
