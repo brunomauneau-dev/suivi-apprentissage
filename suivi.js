@@ -583,14 +583,30 @@ async function renommerFormation(id) {
 async function supprimerFormation(id) {
   const r = ROWS.find(x => x.id === id); if (!r) return;
   if (!confirm("Supprimer « " + (r.Formation || "") + " » du suivi ?")) return;
-  // ses notes et son contrôle d'affichage partent avec elle (sinon ils resteraient orphelins dans Grist)
-  const notes = NOTES.filter(n => Number(n.Formation) === id).map(n => n.id);
-  const aff = AFFICHAGE.filter(a => Number(a.Formation) === id).map(a => a.id);
-  if (DEMO) { ROWS = ROWS.filter(x => x.id !== id); NOTES = NOTES.filter(n => !notes.includes(n.id)); rendre(); return; }
-  await actions([["RemoveRecord", "Suivi", id],
+  await supprimerSuivi([id]);
+}
+// Supprime des formations du suivi, avec leurs notes et leur contrôle d'affichage (sinon ils resteraient orphelins dans Grist)
+async function supprimerSuivi(ids) {
+  const set = new Set(ids);
+  const notes = NOTES.filter(n => set.has(Number(n.Formation))).map(n => n.id);
+  const aff = AFFICHAGE.filter(a => set.has(Number(a.Formation))).map(a => a.id);
+  if (DEMO) { ROWS = ROWS.filter(x => !set.has(x.id)); NOTES = NOTES.filter(n => !notes.includes(n.id)); rendre(); return; }
+  await actions([["BulkRemoveRecord", "Suivi", ids],
     ...(notes.length ? [["BulkRemoveRecord", "Notes", notes]] : []),
     ...(aff.length ? [["BulkRemoveRecord", "Affichage", aff]] : [])]);
   await charger();
+}
+// Supprimer un établissement : seulement ses nouvelles demandes (les formations déjà ouvertes ne sont jamais touchées)
+async function supprimerEtab(etab) {
+  const g = construire(ROWS, aujourdhui()).find(x => norm(x.nom) === norm(etab));
+  const fs = g ? g.formations.filter(f => !f.historique).map(f => f.r) : [];
+  if (!fs.length) return;
+  const autres = g.formations.length - fs.length;
+  const liste = fs.slice(0, 8).map(r => "  • " + (r.Formation || "(sans intitulé)")).join("\n") + (fs.length > 8 ? `\n  … et ${fs.length - 8} autres` : "");
+  if (!confirm(`Supprimer « ${etab} » et ${fs.length > 1 ? `ses ${fs.length} demandes` : "sa demande"} du suivi ?\n\n${liste}\n\nLeurs notes et contrôles d'affichage seront aussi supprimés. Action définitive.`
+    + (autres ? `\n\n(Ses ${autres} formation${autres > 1 ? "s" : ""} déjà ouverte${autres > 1 ? "s" : ""} sur Parcoursup ne ${autres > 1 ? "sont" : "est"} pas touchée${autres > 1 ? "s" : ""}.)` : ""))) return;
+  ouverts.delete(norm(etab));
+  await supprimerSuivi(fs.map(r => r.id));
 }
 
 // Petit menu « ⋯ » d'un établissement
@@ -598,12 +614,14 @@ function menuEtab(etab, ancre, demandes) {
   const pop = nouvellePop("pop-menu");
   pop.innerHTML = `<button class="item" id="m-renom">✎ Renommer l'établissement</button>
     <button class="item" id="m-contact">👤 ${contactDe(etab).nom || contactDe(etab).email ? "Modifier" : "Ajouter"} le contact</button>
-    ${demandes ? `<button class="item" id="m-ajout">+ Ajouter une formation</button>` : ""}`;
+    ${demandes ? `<button class="item" id="m-ajout">+ Ajouter une formation</button>
+    <button class="item rouge" id="m-suppr-etab">🗑 Supprimer l'établissement et ses demandes</button>` : ""}`;
   placer(pop, ancre);
   const on = (id, f) => { const b = document.getElementById(id); if (b) b.addEventListener("click", ev => { ev.stopPropagation(); f(); }); };
   on("m-renom", () => { fermerPop(); renommerEtab(etab); });
   on("m-contact", () => editerContact(etab, ancre));
   on("m-ajout", () => ouvrirAjout(etab));
+  on("m-suppr-etab", () => { fermerPop(); supprimerEtab(etab); });
 }
 
 function brancher(zone) {
