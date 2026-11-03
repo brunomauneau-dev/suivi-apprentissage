@@ -8,7 +8,7 @@ let CTRL_DEFIL = 0;               // position de défilement de la liste, conser
 
 const CRITERES = [
   { col: "Mention_exclusivite_PS", nom: "Inscription exclusivement via Parcoursup", aide: "Le site indique que la candidature se fait sur Parcoursup.",
-    choix: [["Oui", "✓ Conforme", "ok"], ["Non", "✗ Non conforme", "ko"], ["Non trouvé", "Non trouvé", "nt"]] },
+    choix: [["Oui", "✓ Mentionnée", "ok"], ["Non", "Non mentionnée", "nt"]] },
   { col: "Mention_hors_PS", nom: "Pas d'admission hors Parcoursup", aide: "Aucune candidature directe, dossier école ou formulaire parallèle.",
     choix: [["Non", "✓ Conforme", "ok"], ["Oui", "✗ Non conforme", "ko"]] },
   { col: "Pieces_non_necessaires", nom: "Pas de pièces non nécessaires demandées", aide: "Pas de frais de dossier, photo, pièce d'identité… au stade de la candidature.",
@@ -29,12 +29,13 @@ function debutCampagne() { return Date.UTC(rentreeCible() - 1, 8, 1) / 1000; }
 function perimetreControle() { return ROWS.filter(r => r.Formation); }
 function affDe(id) { return AFFICHAGE.find(a => Number(a.Formation) === id) || null; }
 
-// Résultat d'un contrôle (valeurs des critères) : ok, surv (à surveiller), ko, incomplet
+// Résultat d'un contrôle, même règle que la colonne « Conformité » de la table Affichage :
+// admission hors Parcoursup ou pièces non nécessaires → non conforme ; exclusivité Parcoursup non mentionnée → à surveiller
 function verdict(v) {
   if (!v || !v.Mention_exclusivite_PS || !v.Mention_hors_PS || !v.Pieces_non_necessaires) return { s: "incomplet", n: 0 };
-  const n = (v.Mention_exclusivite_PS === "Non" ? 1 : 0) + (v.Mention_hors_PS === "Oui" ? 1 : 0) + (v.Pieces_non_necessaires === "Oui" ? 1 : 0);
+  const n = (v.Mention_hors_PS === "Oui" ? 1 : 0) + (v.Pieces_non_necessaires === "Oui" ? 1 : 0);
   if (n) return { s: "ko", n };
-  if (v.Mention_exclusivite_PS === "Non trouvé") return { s: "surv", n: 0 };
+  if (v.Mention_exclusivite_PS !== "Oui") return { s: "surv", n: 0 };
   return { s: "ok", n: 0 };
 }
 function etatControle(r) {
@@ -109,7 +110,7 @@ function detailControle(liste) {
   const lignes = CRITERES.map(c => `<tr><td class="c-crit"><b>${esc(c.nom)}</b><small>${esc(c.aide)}</small></td>
     <td class="c-choix"><span class="seg">${c.choix.map(([val, lib, cls]) =>
       `<button class="${b[c.col] === val ? "on " + cls : ""}" data-crit="${c.col}" data-val="${esc(val)}">${esc(lib)}</button>`).join("")}</span></td></tr>`).join("");
-  const res = { incomplet: ["wait", "à compléter (3 premiers critères)"], ok: ["ok", "Conforme"], surv: ["warn", "À surveiller (Parcoursup non trouvé)"],
+  const res = { incomplet: ["wait", "à compléter (3 premiers critères)"], ok: ["ok", "Conforme"], surv: ["warn", "À surveiller (exclusivité Parcoursup non mentionnée)"],
     ko: ["ko", `Non conforme (${v.n} point${v.n > 1 ? "s" : ""})`] }[v.s];
   const i = liste.findIndex(x => x.r.id === r.id), suivant = liste[i + 1] && liste[i + 1].r.Etablissement === r.Etablissement ? liste[i + 1] : null;
   return `<h2>${esc(r.Formation)}</h2>
@@ -218,7 +219,7 @@ function mailControle() {
   const b = CTRL_BROUILLON, r = ROWS.find(x => x.id === b.id);
   if (!r) return;
   const points = [];
-  if (b.Mention_exclusivite_PS === "Non" || b.Mention_exclusivite_PS === "Non trouvé") points.push(POINTS_MAIL.Mention_exclusivite_PS);
+  if (b.Mention_exclusivite_PS && b.Mention_exclusivite_PS !== "Oui") points.push(POINTS_MAIL.Mention_exclusivite_PS);
   if (b.Mention_hors_PS === "Oui") points.push(POINTS_MAIL.Mention_hors_PS);
   if (b.Pieces_non_necessaires === "Oui") points.push(POINTS_MAIL.Pieces_non_necessaires);
   const c = contactDe(r.Etablissement);
