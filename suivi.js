@@ -176,7 +176,7 @@ async function rapprocherAuto() {
 
 function analyser(r, maintenant) {
   const fiche = ficheDe(r);
-  const cat = trouverCatalogue(fiche);
+  const cat = r.Cle_carif ? catalogueLie(r) : trouverCatalogue(fiche);
   const ficheDate = (fiche && fiche.Recu_le) || r.Fiche_recue;
   const etat = (s, t) => ({ s, t });
   const verif = v => v === "Conforme" ? etat("done") : v === "À corriger" ? etat("ko") : etat("todo");
@@ -185,7 +185,7 @@ function analyser(r, maintenant) {
     r.Lien_envoye ? etat("done", dateCourte(r.Lien_envoye)) : etat(ficheDate ? "done" : "todo"),
     ficheDate ? etat("done", dateCourte(ficheDate)) : etat("todo"),
     verif(r.UAI), verif(r.RNCP),
-    cat ? (problemesCarif(cat).length ? etat("ko") : etat("done")) : (fiche && CATALOGUE.length ? etat("ko") : etat("todo")),
+    cat ? (problemesCarif(cat).length ? etat("ko") : etat("done")) : (r.Cle_carif === "ABSENTE" ? etat("ko") : etat("todo")),
     r.Publiee === "Publiée" ? etat("done", dateCourte(r.Publiee_le)) : etat("todo"),
   ];
   const base = { e, fiche, cat };
@@ -219,6 +219,9 @@ function analyser(r, maintenant) {
   }
   if (e[3].s === "todo") return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Vérifier l'UAI (voir la fiche)" } };
   if (e[4].s === "todo") return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Vérifier le RNCP (voir la fiche)" } };
+  // fiche non retrouvée automatiquement dans l'export : on la cherche à la main avant de conclure qu'elle est absente
+  if (!cat && CATALOGUE.length && r.Cle_carif !== "ABSENTE") return { ...base, rappro: true, cat_: "saio",
+    next: { cls: "warn", titre: "À faire au SAIO", txt: "Retrouver la formation dans l'export Carif-Oref" } };
   if (e[5].s === "ko") return { ...base, cat_: "attente", depuis: ficheJ, motif: "Carif-Oref à mettre à jour", next: { cls: "wait", titre: ATT,
     txt: "Carif-Oref : " + (cat ? problemesCarif(cat).join(" · ").replace(/ → dates à mettre à jour/g, "") : "formation absente de l'export, à déclarer") } };
   if (e[5].s === "todo") return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Importer l'export Carif-Oref pour vérifier" } };
@@ -629,11 +632,14 @@ function ouvrirEtape(bouton, id, i) {
     pop.innerHTML = `<b>${esc(r.Formation)} — Carif-Oref</b><p class="rien">Cette étape se vérifie automatiquement : elle est validée quand la formation de la fiche
       est trouvée dans l'export Carif-Oref (même organisme + même RNCP ou code diplôme).</p>
       <p>${f.cat ? "✓ Trouvée dans l'export : <b>" + esc(f.cat.Libelle_formation) + "</b> (" + esc(f.cat.Formateur_RS) + ")"
-        : f.fiche ? (CATALOGUE.length ? "✗ Non trouvée dans l'export importé." : "Aucun export importé.") : "Fiche pas encore reçue."}</p>
+        : r.Cle_carif === "ABSENTE" ? "✗ Indiquée comme absente de l'export." : CATALOGUE.length ? "Pas encore retrouvée dans l'export." : "Aucun export importé."}</p>
       ${f.cat ? `<ul class="controles" style="columns:1">
         <li>${/archiv/i.test(f.cat.Etat_diplome || "") ? '<span class="ko">✗</span>' : f.cat.Etat_diplome ? '<span class="ok">✓</span>' : "?"} Diplôme : ${esc(f.cat.Etat_diplome || "état inconnu (réimporter l'export)")}</li>
-        <li>${rentreeOk(f.cat) === false ? '<span class="ko">✗</span>' : rentreeOk(f.cat) ? '<span class="ok">✓</span>' : "?"} Sessions — ${esc(texteRentree(f.cat))} (attendu : un début ${texteFenetre()})</li></ul>` : ""}`;
+        <li>${rentreeOk(f.cat) === false ? '<span class="ko">✗</span>' : rentreeOk(f.cat) ? '<span class="ok">✓</span>' : "?"} Sessions — ${esc(texteRentree(f.cat))} (attendu : un début ${texteFenetre()})</li></ul>` : ""}
+      ${CATALOGUE.length ? `<div class="pop-btns"><button class="btn petit" id="pop-rappro">${f.cat || r.Cle_carif ? "Changer la formation de l'export" : "Retrouver dans l'export"}</button></div>` : ""}`;
     placer(pop, bouton);
+    const br = document.getElementById("pop-rappro");
+    if (br) br.addEventListener("click", ev => { ev.stopPropagation(); rapprocher(id); });
     return;
   }
   if (et.col === "Lien_envoye" && !r.Lien_envoye) { preparerMail(r.Etablissement, [id], bouton); return; }
@@ -673,7 +679,21 @@ function rapprocher(id, recherche) {
     const q = jetons(recherche);
     liste = CATALOGUE.map(c => ({ c, score: part(q, new Set([...c._torg, ...c._tform, ...c._tlieu])) })).filter(x => x.score >= 0.99 || (q.size > 1 && x.score >= 0.6))
       .sort((a, b) => b.score - a.score).slice(0, 25);
-  } else liste = candidatsHistorique(r).liste.slice(0, 8);
+  } else {
+    const fi = ficheDe(r);
+    liste = candidatsHistorique(r).liste;
+    if (fi) {
+      const siret = chiffres(fi.Siret).padStart(14, "0"), uais = [fi.UAI_formateur, fi.UAI_lieu, fi.UAI_gestionnaire].map(code).filter(Boolean);
+      const meme = [...new Set([...(INDEX.siret.get(siret) || []), ...uais.flatMap(u => INDEX.uai.get(u) || [])])];
+      const form = jetons(r.Formation, fi.Libelle_formation || "");
+      const rncp = chiffres(fi.Code_RNCP), cfd = fi.Code_diplome ? code(fi.Code_diplome).padStart(8, "0") : "";
+      const sc = c => (rncp && c._rncp === rncp ? 2 : 0) + (cfd && c._cfd === cfd ? 2 : 0) + part(form, c._tform);
+      const parFiche = meme.map(c => ({ c, score: 10 + sc(c) })).sort((a, b) => b.score - a.score);
+      const vus = new Set(parFiche.map(x => x.c.Cle_ME));
+      liste = [...parFiche, ...liste.filter(x => !vus.has(x.c.Cle_ME))];
+    }
+    liste = liste.slice(0, 8);
+  }
   const ligne = c => {
     const pb = problemesCarif(c);
     return `<tr class="${lie && lie.Cle_ME === c.Cle_ME ? "choisi" : ""}"><td><b>${esc(c.Libelle_formation)}</b><div class="rien">${esc(c.Formateur_RS)}${c.Gestionnaire_RS && c.Gestionnaire_RS !== c.Formateur_RS ? " · gest. " + esc(c.Gestionnaire_RS) : ""}</div></td>
@@ -683,7 +703,8 @@ function rapprocher(id, recherche) {
   };
   const pop = nouvellePop("pop-fiche");
   pop.innerHTML = `<div class="fiche-tete"><b>Retrouver dans l'export Carif-Oref — ${esc(r.Etablissement)} · ${esc(r.Formation)}</b><button class="btn gris petit" id="pop-fermer">Fermer</button></div>
-    <p class="rien">Formation déjà ouverte sur Parcoursup${r.g_ta_cod ? ` (<a href="${esc(r.Lien_Parcoursup || "#")}" target="_blank" rel="noopener">fiche n° ${esc(r.g_ta_cod)}</a>)` : ""} :
+    <p class="rien">${estHistorique(r) ? `Formation déjà ouverte sur Parcoursup${r.g_ta_cod ? ` (<a href="${esc(r.Lien_Parcoursup || "#")}" target="_blank" rel="noopener">fiche n° ${esc(r.g_ta_cod)}</a>)` : ""}`
+      : "Formation non retrouvée automatiquement à partir de la fiche (SIRET, UAI, RNCP, code diplôme). Les formations du même organisme sont proposées en premier"} :
       indiquez une fois pour toutes la formation de l'export qui lui correspond (même site). Elle sera ensuite contrôlée à chaque import.</p>
     ${lie ? `<p>Actuellement rapprochée de : <b>${esc(lie.Libelle_formation)}</b> — ${esc(lie.Formateur_RS)} (${esc(lie.Ville)})</p>` : ""}
     <div class="ligne-recherche"><input id="rappro-q" placeholder="Chercher dans l'export : organisme, ville, intitulé…" value="${esc(recherche || "")}">
