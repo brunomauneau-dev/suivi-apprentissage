@@ -3,6 +3,7 @@
 // Utilise les variables et fonctions de suivi.js (ROWS, DEMO, esc, norm, aujourdhui, contactDe, rentreeCible…).
 
 let AFFICHAGE = [], CTRL_SEL = null, CTRL_BROUILLON = null;
+const CTRL_OUVERTS = new Set();   // établissements dépliés dans la liste (repliés par défaut)
 
 const CRITERES = [
   { col: "Mention_exclusivite_PS", nom: "Inscription exclusivement via Parcoursup", aide: "Le site indique que la candidature se fait sur Parcoursup.",
@@ -64,17 +65,27 @@ function dateLongue(sec) { return sec ? new Date(sec * 1000).toLocaleDateString(
 function htmlControle(q, filtre) {
   const liste = listeControle(q, filtre);
   if (!liste.length) { CTRL_SEL = null; return `<div class="empty">${perimetreControle().length ? "Aucune formation ne correspond." : "Aucune formation ouverte sur Parcoursup à contrôler."}</div>`; }
-  if (!liste.some(x => x.r.id === CTRL_SEL)) { CTRL_SEL = liste[0].r.id; CTRL_BROUILLON = null; }
-  let etab = "";
-  const items = liste.map(({ r, e }) => {
-    const tete = r.Etablissement !== etab ? `<div class="c-etab">${esc(r.Etablissement || "Sans établissement")}</div>` : "";
-    etab = r.Etablissement;
-    const info = e.s === "afaire" ? (e.a && e.a.Date_controle ? `dernier contrôle le ${dateLongue(e.a.Date_controle)}` : "jamais contrôlée")
-      : `contrôlée le ${dateLongue(e.a.Date_controle)} · ${LIB_ETAT[e.s]}${e.s === "ko" ? ` (${e.n} point${e.n > 1 ? "s" : ""})` : ""}${e.a.Mail_envoye_le ? ` · mail le ${dateLongue(e.a.Mail_envoye_le)}` : ""}`;
-    return `${tete}<button class="c-item${r.id === CTRL_SEL ? " sel" : ""}" data-ctrl="${r.id}"><span class="c-pt ${e.s}"></span>
-      <span><b>${esc(r.Formation)}</b><small>${esc(info)}</small></span></button>`;
+  if (CTRL_SEL && !liste.some(x => x.r.id === CTRL_SEL)) { CTRL_SEL = null; CTRL_BROUILLON = null; }
+  const groupes = new Map();
+  for (const x of liste) { const k = x.r.Etablissement || "Sans établissement"; if (!groupes.has(k)) groupes.set(k, []); groupes.get(k).push(x); }
+  const sel = CTRL_SEL ? ROWS.find(r => r.id === CTRL_SEL) : null;
+  const items = [...groupes].map(([nom, xs]) => {
+    const ouvert = CTRL_OUVERTS.has(nom) || !!q || (sel && (sel.Etablissement || "Sans établissement") === nom);
+    const c = s => xs.filter(x => x.e.s === s).length;
+    const resume = [c("afaire") + c("incomplet") ? `<span class="tag warn">${c("afaire") + c("incomplet")} à contrôler</span>` : "",
+      c("ko") ? `<span class="tag ko">${c("ko")} non conforme${c("ko") > 1 ? "s" : ""}</span>` : "", c("surv") ? `<span class="tag wait">${c("surv")} à surveiller</span>` : "",
+      c("ok") ? `<span class="tag ok">${c("ok")} conforme${c("ok") > 1 ? "s" : ""}</span>` : ""].join("");
+    const forms = ouvert ? xs.map(({ r, e }) => {
+      const info = e.s === "afaire" ? (e.a && e.a.Date_controle ? `dernier contrôle le ${dateLongue(e.a.Date_controle)}` : "jamais contrôlée")
+        : `contrôlée le ${dateLongue(e.a.Date_controle)} · ${LIB_ETAT[e.s]}${e.s === "ko" ? ` (${e.n} point${e.n > 1 ? "s" : ""})` : ""}${e.a.Mail_envoye_le ? ` · mail le ${dateLongue(e.a.Mail_envoye_le)}` : ""}`;
+      return `<button class="c-item${r.id === CTRL_SEL ? " sel" : ""}" data-ctrl="${r.id}"><span class="c-pt ${e.s}"></span>
+        <span><b>${esc(r.Formation)}</b><small>${esc(info)}</small></span></button>`;
+    }).join("") : "";
+    return `<div class="c-groupe${ouvert ? " open" : ""}"><button class="c-etab" data-ctrl-etab="${esc(nom)}"><span class="chev">${ouvert ? "▼" : "▶"}</span>
+      <span><b>${esc(nom)}</b><small>${xs.length} formation${xs.length > 1 ? "s" : ""}</small></span><span class="c-tags">${resume}</span></button>${forms}</div>`;
   }).join("");
-  return `<div class="c-grille"><div class="card-c c-liste">${items}</div><div class="card-c c-det">${detailControle(liste)}</div></div>`;
+  return `<div class="c-grille"><div class="card-c c-liste">${items}</div><div class="card-c c-det">${CTRL_SEL ? detailControle(liste)
+    : `<p class="rien" style="padding:30px 10px;text-align:center">Dépliez un établissement à gauche et choisissez une formation à contrôler.</p>`}</div></div>`;
 }
 
 function detailControle(liste) {
@@ -97,7 +108,7 @@ function detailControle(liste) {
       `<button class="${b[c.col] === val ? "on " + cls : ""}" data-crit="${c.col}" data-val="${esc(val)}">${esc(lib)}</button>`).join("")}</span></td></tr>`).join("");
   const res = { incomplet: ["wait", "à compléter (3 premiers critères)"], ok: ["ok", "Conforme"], surv: ["warn", "À surveiller (Parcoursup non trouvé)"],
     ko: ["ko", `Non conforme (${v.n} point${v.n > 1 ? "s" : ""})`] }[v.s];
-  const i = liste.findIndex(x => x.r.id === r.id), suivant = liste[i + 1];
+  const i = liste.findIndex(x => x.r.id === r.id), suivant = liste[i + 1] && liste[i + 1].r.Etablissement === r.Etablissement ? liste[i + 1] : null;
   return `<h2>${esc(r.Formation)}</h2>
     <div class="c-sous">${esc(r.Etablissement || "")}${r.Lieu ? " · " + esc(r.Lieu) : ""}${r.g_ta_cod ? " · fiche Parcoursup n° " + esc(r.g_ta_cod) : ""}</div>
     <div class="c-liens">
@@ -118,6 +129,14 @@ function detailControle(liste) {
 
 function brancherControle(zone) {
   zone.querySelectorAll("[data-ctrl]").forEach(x => x.addEventListener("click", () => { CTRL_SEL = Number(x.dataset.ctrl); CTRL_BROUILLON = null; rendre(); }));
+  zone.querySelectorAll("[data-ctrl-etab]").forEach(x => x.addEventListener("click", () => {
+    const k = x.dataset.ctrlEtab, sel = CTRL_SEL ? ROWS.find(r => r.id === CTRL_SEL) : null;
+    if (CTRL_OUVERTS.has(k) || (sel && (sel.Etablissement || "Sans établissement") === k)) {
+      CTRL_OUVERTS.delete(k);
+      if (sel && (sel.Etablissement || "Sans établissement") === k) { CTRL_SEL = null; CTRL_BROUILLON = null; }
+    } else CTRL_OUVERTS.add(k);
+    rendre();
+  }));
   zone.querySelectorAll("[data-crit]").forEach(x => x.addEventListener("click", () => {
     if (!CTRL_BROUILLON) return;
     lireChampsControle();
@@ -160,7 +179,7 @@ async function enregistrerControle(avecMail) {
   const b = CTRL_BROUILLON, r = ROWS.find(x => x.id === b.id);
   if (!r) return;
   const liste = listeControle(norm(recherche), filtre), i = liste.findIndex(x => x.r.id === r.id);
-  const suivant = !avecMail && liste[i + 1] ? liste[i + 1].r.id : r.id;
+  const suivant = !avecMail && liste[i + 1] && liste[i + 1].r.Etablissement === r.Etablissement ? liste[i + 1].r.id : avecMail ? r.id : null;
   const a = affDe(r.id), champs = { Date_controle: aujourdhui(), Commentaire: b.Commentaire || null };
   for (const c of CRITERES) champs[c.col] = b[c.col] || null;
   if (avecMail) champs.Mail_envoye_le = aujourdhui();
