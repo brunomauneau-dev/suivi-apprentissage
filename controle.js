@@ -3,7 +3,8 @@
 // Utilise les variables et fonctions de suivi.js (ROWS, DEMO, esc, norm, aujourdhui, contactDe, rentreeCible…).
 
 let AFFICHAGE = [], CTRL_SEL = null, CTRL_BROUILLON = null;
-const CTRL_OUVERTS = new Set();   // établissements dépliés dans la liste (repliés par défaut)
+const CTRL_OUVERTS = new Set();
+let CTRL_DEFIL = 0;   // position de défilement de la liste, conservée d'un affichage à l'autre   // établissements dépliés dans la liste (repliés par défaut)
 
 const CRITERES = [
   { col: "Mention_exclusivite_PS", nom: "Inscription exclusivement via Parcoursup", aide: "Le site indique que la candidature se fait sur Parcoursup.",
@@ -37,7 +38,10 @@ function verdict(v) {
 }
 function etatControle(r) {
   const a = affDe(r.id);
-  if (!a || !a.Date_controle || a.Date_controle < debutCampagne()) return { s: "afaire", a };
+  if (!a) return { s: "afaire", a };
+  // contrôles de l'ancien tableau : saisis sans date, ils comptent comme faits
+  if (!a.Date_controle) return CRITERES.some(c => a[c.col]) ? { ...verdict(a), a, ancien: true } : { s: "afaire", a };
+  if (a.Date_controle < debutCampagne()) return { s: "afaire", a };
   return { ...verdict(a), a };
 }
 const LIB_ETAT = { afaire: "à contrôler", ok: "conforme", surv: "à surveiller", ko: "non conforme", incomplet: "à compléter" };
@@ -77,7 +81,7 @@ function htmlControle(q, filtre) {
       c("ok") ? `<span class="tag ok">${c("ok")} conforme${c("ok") > 1 ? "s" : ""}</span>` : ""].join("");
     const forms = ouvert ? xs.map(({ r, e }) => {
       const info = e.s === "afaire" ? (e.a && e.a.Date_controle ? `dernier contrôle le ${dateLongue(e.a.Date_controle)}` : "jamais contrôlée")
-        : `contrôlée le ${dateLongue(e.a.Date_controle)} · ${LIB_ETAT[e.s]}${e.s === "ko" ? ` (${e.n} point${e.n > 1 ? "s" : ""})` : ""}${e.a.Mail_envoye_le ? ` · mail le ${dateLongue(e.a.Mail_envoye_le)}` : ""}`;
+        : `${e.ancien ? "contrôlée (ancien tableau)" : "contrôlée le " + dateLongue(e.a.Date_controle)} · ${LIB_ETAT[e.s]}${e.s === "ko" ? ` (${e.n} point${e.n > 1 ? "s" : ""})` : ""}${e.a.Mail_envoye_le ? ` · mail le ${dateLongue(e.a.Mail_envoye_le)}` : ""}`;
       return `<button class="c-item${r.id === CTRL_SEL ? " sel" : ""}" data-ctrl="${r.id}"><span class="c-pt ${e.s}"></span>
         <span><b>${esc(r.Formation)}</b><small>${esc(info)}</small></span></button>`;
     }).join("") : "";
@@ -101,7 +105,7 @@ function detailControle(liste) {
   const b = CTRL_BROUILLON, v = verdict(b);
   const ancien = a && a.Date_controle ? (a.Date_controle < debutCampagne()
     ? `Valeurs reprises du contrôle du ${dateLongue(a.Date_controle)} (campagne précédente) : à confirmer.`
-    : `Contrôlée le ${dateLongue(a.Date_controle)}.`) : a ? "Valeurs reprises de l'ancien tableau de contrôle : à confirmer." : "Première vérification de cette formation.";
+    : `Contrôlée le ${dateLongue(a.Date_controle)}.`) : a && CRITERES.some(c => a[c.col]) ? "Contrôle repris de l'ancien tableau (sans date). Modifiez si besoin puis enregistrez pour le dater." : "Première vérification de cette formation.";
   const nbCaptures = a && Array.isArray(a.Captures) ? a.Captures.length - 1 : 0;
   const lignes = CRITERES.map(c => `<tr><td class="c-crit"><b>${esc(c.nom)}</b><small>${esc(c.aide)}</small></td>
     <td class="c-choix"><span class="seg">${c.choix.map(([val, lib, cls]) =>
@@ -128,6 +132,8 @@ function detailControle(liste) {
 }
 
 function brancherControle(zone) {
+  const l = zone.querySelector(".c-liste");
+  if (l) { l.scrollTop = CTRL_DEFIL; l.addEventListener("scroll", () => { CTRL_DEFIL = l.scrollTop; }); }
   zone.querySelectorAll("[data-ctrl]").forEach(x => x.addEventListener("click", () => { CTRL_SEL = Number(x.dataset.ctrl); CTRL_BROUILLON = null; rendre(); }));
   zone.querySelectorAll("[data-ctrl-etab]").forEach(x => x.addEventListener("click", () => {
     const k = x.dataset.ctrlEtab, sel = CTRL_SEL ? ROWS.find(r => r.id === CTRL_SEL) : null;
