@@ -10,12 +10,30 @@ const ACADEMIE = "Bordeaux";
 function rentreeCible() { const d = new Date(); return d.getMonth() >= 8 ? d.getFullYear() + 1 : d.getFullYear(); }
 
 // Problèmes de la formation dans l'export Carif-Oref qui empêchent la publication sur Parcoursup
+// Une session « de rentrée » doit démarrer en début d'année scolaire : entre ces deux dates de l'année cible (mois 1 à 12)
+const RENTREE_DU = [6, 1], RENTREE_AU = [12, 31];
+function fenetreRentree() { const a = rentreeCible(); return [Date.UTC(a, RENTREE_DU[0] - 1, RENTREE_DU[1]), Date.UTC(a, RENTREE_AU[0] - 1, RENTREE_AU[1])]; }
+function texteFenetre() { const [d, f] = fenetreRentree(), x = t => new Date(t).toLocaleDateString("fr-FR", { timeZone: "UTC" }); return `entre le ${x(d)} et le ${x(f)}`; }
+function debutsSessions(c) {
+  return String((c && c.Debuts_sessions) || "").split(/[,;\s]+/).map(t => /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t)).filter(Boolean)
+    .map(m => ({ txt: m[0], t: Date.UTC(+m[3], +m[2] - 1, +m[1]) }));
+}
+// true / false selon les dates de début de session (ou l'année de rentrée si l'export n'a pas les dates), null si inconnu
+function rentreeOk(c) {
+  const d = debutsSessions(c);
+  if (d.length) { const [a, b] = fenetreRentree(); return d.some(x => x.t >= a && x.t <= b); }
+  const ans = String((c && c.Annee_de_rentree) || "").split(/[,;\s]+/).filter(Boolean);
+  return ans.length ? ans.includes(String(rentreeCible())) : null;
+}
+function texteRentree(c) {
+  const d = debutsSessions(c);
+  return d.length ? "débuts de session : " + d.map(x => x.txt).join(", ") : "rentrées : " + ((c && c.Annee_de_rentree) || "?");
+}
 function problemesCarif(c) {
   if (!c) return [];
-  const pb = [], cible = String(rentreeCible());
+  const pb = [], cible = rentreeCible();
   if (/archiv/i.test(c.Etat_diplome || "")) pb.push("diplôme archivé (code expiré) : mise à conformité RNCP / code diplôme");
-  const ans = String(c.Annee_de_rentree || "").split(/[,;\s]+/).filter(Boolean);
-  if (ans.length && !ans.includes(cible)) pb.push(`pas de session pour la rentrée ${cible} (dernière : ${ans.sort().slice(-1)[0]}) : dates à mettre à jour`);
+  if (rentreeOk(c) === false) pb.push(`aucune session ne démarre à la rentrée ${cible} (${texteRentree(c)}) : dates de formation à mettre à jour`);
   return pb;
 }
 const ETAPES = [
@@ -379,7 +397,7 @@ function ouvrirEtape(bouton, id, i) {
         : f.fiche ? (CATALOGUE.length ? "✗ Non trouvée dans l'export importé." : "Aucun export importé.") : "Fiche pas encore reçue."}</p>
       ${f.cat ? `<ul class="controles" style="columns:1">
         <li>${/archiv/i.test(f.cat.Etat_diplome || "") ? '<span class="ko">✗</span>' : f.cat.Etat_diplome ? '<span class="ok">✓</span>' : "?"} Diplôme : ${esc(f.cat.Etat_diplome || "état inconnu (réimporter l'export)")}</li>
-        <li>${String(f.cat.Annee_de_rentree || "").includes(String(rentreeCible())) ? '<span class="ok">✓</span>' : '<span class="ko">✗</span>'} Rentrées des sessions : ${esc(f.cat.Annee_de_rentree || "?")} (attendu : ${rentreeCible()})</li></ul>` : ""}`;
+        <li>${rentreeOk(f.cat) === false ? '<span class="ko">✗</span>' : rentreeOk(f.cat) ? '<span class="ok">✓</span>' : "?"} Sessions — ${esc(texteRentree(f.cat))} (attendu : un début ${texteFenetre()})</li></ul>` : ""}`;
     placer(pop, bouton);
     return;
   }
@@ -610,7 +628,7 @@ function voirFiche(id) {
     ["Code diplôme", fi.Code_diplome, c.Code_scolarite, code(fi.Code_diplome).padStart(8, "0") === c._cfd],
     ["Code postal", fi.Code_postal, c.CP, String(fi.Code_postal || "").slice(0, 5) === String(c.CP || "").slice(0, 5)],
     ["État du diplôme", "", c.Etat_diplome || "inconnu (réimporter l'export)", !/archiv/i.test(c.Etat_diplome || "")],
-    ["Rentrées des sessions", "rentrée " + rentreeCible() + " attendue", c.Annee_de_rentree, String(c.Annee_de_rentree || "").includes(String(rentreeCible()))],
+    ["Début de session", "début attendu " + texteFenetre(), texteRentree(c), rentreeOk(c) !== false],
   ] : null;
   const champ = (l, v) => `<div class="champ"><span>${esc(l)}</span><b>${esc(Array.isArray(v) ? v.filter(x => x !== "L").join(", ") : v === true ? "Oui" : v === false ? "Non" : v ?? "")}</b></div>`;
   const pop = nouvellePop("pop-fiche");
@@ -661,8 +679,20 @@ function texteCellule(v) {
   return s === "NULL" ? "" : s.replace(/^(\d+)\.0$/, "$1");
 }
 
+// Date de l'export (nombre Excel, jj/mm/aaaa ou aaaa-mm-jj) → « jj/mm/aaaa »
+function dateExport(v) {
+  if (typeof v === "number" && v > 20000) {
+    const d = new Date(Math.round((v - 25569) * 86400000));
+    return String(d.getUTCDate()).padStart(2, "0") + "/" + String(d.getUTCMonth() + 1).padStart(2, "0") + "/" + d.getUTCFullYear();
+  }
+  const s = texteCellule(v), m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s), f = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  if (f) return f[1].padStart(2, "0") + "/" + f[2].padStart(2, "0") + "/" + f[3];
+  return "";
+}
+
 function preparerExport(lignesBrutes) {
-  const best = new Map(), annees = new Map();
+  const best = new Map(), annees = new Map(), debuts = new Map();
   for (const l of lignesBrutes) {
     if (texteCellule(l["Académie"]) !== ACADEMIE) continue;
     let cle = texteCellule(l["CLE MINISTERES EDUCATIFS"]);
@@ -670,18 +700,20 @@ function preparerExport(lignesBrutes) {
     const an = texteCellule(l["Annee_de_rentree"]);
     if (!annees.has(cle)) annees.set(cle, new Set());
     if (an) annees.get(cle).add(an);
+    if (!debuts.has(cle)) debuts.set(cle, new Set());
+    const dd = dateExport(l["Date_debut"]);
+    if (dd) debuts.get(cle).add(dd);
     if (!best.has(cle) || an > texteCellule(best.get(cle)["Annee_de_rentree"])) best.set(cle, { ...l, "CLE MINISTERES EDUCATIFS": cle });
   }
   return [...best.entries()].map(([cle, l]) => {
     const o = {};
     for (const [src, dst] of Object.entries(COLS_EXPORT)) o[dst] = texteCellule(l[src]);
-    if (typeof l["Date_MAJ"] === "number") {
-      const d = new Date(Math.round((l["Date_MAJ"] - 25569) * 86400000));
-      o.Date_MAJ = String(d.getUTCDate()).padStart(2, "0") + "/" + String(d.getUTCMonth() + 1).padStart(2, "0") + "/" + d.getUTCFullYear();
-    }
+    if (typeof l["Date_MAJ"] === "number") o.Date_MAJ = dateExport(l["Date_MAJ"]);
     for (const k of ["Siret_gestionnaire", "Siret_formateur"]) if (/^\d+$/.test(o[k])) o[k] = o[k].padStart(14, "0");
     if (/^\d+$/.test(o.Code_scolarite)) o.Code_scolarite = o.Code_scolarite.padStart(8, "0");
     o.Annee_de_rentree = [...annees.get(cle)].sort().join(", ");
+    const cleD = x => x.slice(6) + x.slice(3, 5) + x.slice(0, 2);
+    o.Debuts_sessions = [...debuts.get(cle)].sort((a, b) => cleD(a).localeCompare(cleD(b))).join(", ");
     return o;
   });
 }
@@ -725,9 +757,10 @@ async function charger() {
       await grist.docApi.applyUserActions(manquantes.map(([c, l]) => ["AddColumn", "Suivi", c, { type: "Text", label: l, isFormula: false }]));
       for (const [c] of manquantes) s[c] = s.id.map(() => null);
     }
-    if (c && !("Etat_diplome" in c)) {
-      await grist.docApi.applyUserActions([["AddColumn", "Catalogue", "Etat_diplome", { type: "Text", label: "Etat_diplome", isFormula: false }]]);
-      c.Etat_diplome = c.id.map(() => null);
+    const manquantesC = c ? ["Etat_diplome", "Debuts_sessions"].filter(k => !(k in c)) : [];
+    if (manquantesC.length) {
+      await grist.docApi.applyUserActions(manquantesC.map(k => ["AddColumn", "Catalogue", k, { type: "Text", label: k, isFormula: false }]));
+      for (const k of manquantesC) c[k] = c.id.map(() => null);
     }
     ROWS = lignes(s); FICHES = lignes(f); CATALOGUE = lignes(c); PARAM = lignes(p)[0] || {}; INDEX = null; DEMO = false;
   } catch (e) {
@@ -754,8 +787,8 @@ function demo() {
     { id: 2, Code: "F-0003", Organisme: "TALIS", Siret: "33851631300099", Libelle_formation: "BTS NDRC", Code_RNCP: "38368", Code_diplome: "32031212", UAI_lieu: "0333460G", UAI_formateur: "0333233K", UAI_gestionnaire: "0333460G", Code_postal: "33000", Commune: "Bordeaux", Certification: ["L", "Qualiopi"], Num_Qualiopi: "", Referencee_Carif_Oref: "Oui", Statut: "Groupe autonome", Duree: "2 ans", Attestation: true, Signataire: "S. Martin", Recu_le: j("16/10") },
   ];
   CATALOGUE = [
-    { Cle_ME: "x1", Statut_catalogue: "Publiée", Libelle_formation: "BTS Management Commercial Opérationnel", Formateur_RS: "TALIS BORDEAUX", Siret_formateur: "33851631300099", Siret_gestionnaire: "33851631300099", UAI_validee: "0333460G", Code_RNCP: "38362", Code_scolarite: "32031213", CP: "33000", Ville: "Bordeaux", Date_MAJ: "02/11/2026", Etat_diplome: "Diplôme en cours de validité", Annee_de_rentree: "2026, 2027" },
-    { Cle_ME: "x2", Statut_catalogue: "Publiée", Libelle_formation: "BTS Négociation et digitalisation de la relation client", Formateur_RS: "TALIS BORDEAUX", Siret_formateur: "33851631300099", Siret_gestionnaire: "33851631300099", UAI_validee: "0333460G", Code_RNCP: "38368", Code_scolarite: "32031212", CP: "33000", Ville: "Bordeaux", Date_MAJ: "02/11/2026", Etat_diplome: "Diplôme en état archivé", Annee_de_rentree: "2025, 2026" },
+    { Cle_ME: "x1", Statut_catalogue: "Publiée", Libelle_formation: "BTS Management Commercial Opérationnel", Formateur_RS: "TALIS BORDEAUX", Siret_formateur: "33851631300099", Siret_gestionnaire: "33851631300099", UAI_validee: "0333460G", Code_RNCP: "38362", Code_scolarite: "32031213", CP: "33000", Ville: "Bordeaux", Date_MAJ: "02/11/2026", Etat_diplome: "Diplôme en cours de validité", Annee_de_rentree: "2026, 2027", Debuts_sessions: "01/09/2026, 06/09/2027" },
+    { Cle_ME: "x2", Statut_catalogue: "Publiée", Libelle_formation: "BTS Négociation et digitalisation de la relation client", Formateur_RS: "TALIS BORDEAUX", Siret_formateur: "33851631300099", Siret_gestionnaire: "33851631300099", UAI_validee: "0333460G", Code_RNCP: "38368", Code_scolarite: "32031212", CP: "33000", Ville: "Bordeaux", Date_MAJ: "02/11/2026", Etat_diplome: "Diplôme en état archivé", Annee_de_rentree: "2025, 2026", Debuts_sessions: "02/09/2025, 07/09/2026" },
   ];
   PARAM = { URL_formulaire: "https://exemple/forms/abc" };
   ROWS.forEach(r => { r.Lien_fiche = PARAM.URL_formulaire + "?Code=" + r.Code; });
