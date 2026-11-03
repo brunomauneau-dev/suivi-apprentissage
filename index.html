@@ -6,7 +6,7 @@
 <title>Suivi des référencements</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js" defer></script>
 <script src="lib/xlsx.full.min.js" defer></script>
-<script src="suivi.js?v=26" defer></script>
+<script src="suivi.js?v=27" defer></script>
 <style>
   :root {
     --bg: #f6f6f6; --card: #ffffff; --text: #1e1e1e; --muted: #666; --line: #e5e5e5;
@@ -178,6 +178,15 @@
   .etab .liste-ouvertes th:nth-child(1) { width: 42%; } .etab .liste-ouvertes th:nth-child(2) { width: 21%; }
   .etab .liste-ouvertes th:nth-child(3) { width: 9%; } .etab .liste-ouvertes th:nth-child(4) { width: 15%; } .etab .liste-ouvertes th:nth-child(5) { width: 13%; }
   .etab .liste-ouvertes td { overflow-wrap: anywhere; }
+  .suivi-etapes th.e, .suivi-etapes td.e { text-align: center; width: 92px; padding-left: 4px; padding-right: 4px; }
+  .suivi-etapes td { vertical-align: middle; }
+  .cellule { min-width: 76px; border: 0; border-radius: 7px; padding: 4px 6px; font: 600 12px inherit; cursor: pointer; white-space: nowrap; }
+  .cellule.ok { background: var(--green-bg); color: var(--green); } .cellule.ko { background: var(--red-bg); color: var(--red); }
+  .cellule.todo { background: var(--grey-bg); color: #999; } .cellule.cur { background: var(--amber-bg); color: var(--amber); box-shadow: inset 0 0 0 2px #f5a000; }
+  .cellule:hover { filter: brightness(.95); }
+  .suivi-etapes .action { width: 250px; font-size: 13px; } .suivi-etapes .action b { display: block; font-size: 12.5px; }
+  .suivi-etapes .action span { display: block; color: #444; } .suivi-etapes .action div { margin-top: 5px; }
+  .suivi-etapes .action.ko b { color: var(--red); } .suivi-etapes .action.warn b { color: var(--amber); } .suivi-etapes .action.ok b { color: var(--green); } .suivi-etapes .action.wait b { color: #555; }
 </style>
 </head>
 <body>

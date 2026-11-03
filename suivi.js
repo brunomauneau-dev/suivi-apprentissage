@@ -369,15 +369,17 @@ function rendre() {
         att ? `<span class="tag wait">${att} en attente</span>` : "", fin ? `<span class="tag ok">${fin} publiée${pl(fin)}</span>` : ""].join("");
       const ouvert = ouverts.has(g.cle) || !!q;
       const aEnvoyer = toutesG.filter(f => !f.r.Lien_envoye && !f.fiche && f.cat_ !== "publie").length;
+      const aRenvoyer = toutesG.filter(f => !f.fiche && f.cat_ !== "publie").length;
       return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
         <div class="etab-head"><span class="chev">▶</span>
           <div class="etab-name"><b>${esc(g.nom)}</b> <button class="btn-lien" data-renom-etab="${esc(g.nom)}" title="Renommer l'établissement">✎ renommer</button><span>${tot} formation${pl(tot)}</span>
             <span class="contact">${contactHtml(contactDe(g.nom))} <button class="btn-lien" data-contact="${esc(g.nom)}">✎ contact</button></span></div>
           <div class="tags">${tags}</div></div>
-        <div class="forms"><table class="liste-demandes">
-          <tr><th>Formation</th><th>Statut</th><th>Raison</th><th>Étapes</th><th></th></tr>
+        <div class="forms"><table class="liste-demandes suivi-etapes">
+          <tr><th>Formation</th>${ETAPES.map(et => `<th class="e">${esc(et.nom === "Catalogue national" ? "Catalogue" : et.nom)}</th>`).join("")}<th>Prochaine action</th></tr>
           ${fs.map(ligneFormation).join("")}</table>
-          <div class="ajout-ligne">${aEnvoyer ? `<button class="btn petit" data-mail="${esc(g.nom)}">✉ Envoyer ${aEnvoyer > 1 ? "les " + aEnvoyer + " fiches" : "la fiche"} par mail</button> &nbsp; ` : ""}
+          <div class="ajout-ligne">${aEnvoyer ? `<button class="btn petit" data-mail="${esc(g.nom)}">✉ Envoyer ${aEnvoyer > 1 ? "les " + aEnvoyer + " fiches" : "la fiche"} par mail</button> &nbsp; `
+            : aRenvoyer ? `<button class="btn petit gris" data-mail="${esc(g.nom)}">✉ Renvoyer ${aRenvoyer > 1 ? "les fiches" : "la fiche"} par mail</button> &nbsp; ` : ""}
             <button class="btn-lien" data-ajout="${esc(g.nom)}">+ Ajouter une formation pour ${esc(g.nom)}</button></div></div>
       </section>`;
     }).join("");
@@ -506,25 +508,33 @@ function outilsFormation(f) {
     `<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "✎ commentaire" : "+ commentaire"}</button>`].join(" ");
 }
 
-// Onglet « Nouvelles demandes » : une ligne par formation — statut, raison, étapes en points, actions
+// Onglet « Nouvelles demandes » : une ligne par formation, une case par étape (cliquable), puis la prochaine action
+const A_FAIRE = ["à saisir", "à envoyer", "attendue", "à vérifier", "à vérifier", "à vérifier", "à publier"];
 function ligneFormation(f) {
   const r = f.r;
-  const points = ETAPES.map((et, i) => {
-    const st = f.e[i].s, lib = st === "done" ? "fait" : st === "ko" ? "problème" : "à faire";
-    return `<button class="point ${st}" data-id="${r.id}" data-etape="${i}" title="${esc(et.nom)} : ${lib}${f.e[i].t ? " (" + esc(f.e[i].t) + ")" : ""}"></button>`;
-  }).join("");
   const prochaine = ETAPES.findIndex((et, i) => f.e[i].s !== "done");
+  const cases = ETAPES.map((et, i) => {
+    const st = f.e[i].s;
+    let cls = "todo", txt = "—";
+    if (st === "done") { cls = "ok"; txt = "✓" + (f.e[i].t ? " " + f.e[i].t : ""); }
+    else if (st === "ko") { cls = "ko"; txt = et.type === "verif" ? "à corriger" : et.type === "auto" ? "✗ à corriger" : "!"; }
+    else if (i === prochaine) { cls = "cur"; txt = A_FAIRE[i]; }
+    return `<td class="e"><button class="cellule ${cls}" data-id="${r.id}" data-etape="${i}" title="${esc(et.nom)} — cliquer pour ouvrir">${esc(txt)}</button></td>`;
+  }).join("");
   const sous = [];
   if (r.Lieu) sous.push(esc(r.Lieu));
   if (r.Lien_Parcoursup) sous.push(`<a href="${esc(r.Lien_Parcoursup)}" target="_blank" rel="noopener">fiche Parcoursup</a>`);
-  sous.push(`<button class="btn-lien" data-renom="${r.id}">renommer</button>`, `<button class="btn-lien rouge" data-suppr="${r.id}">supprimer</button>`);
-  const titre = f.next.titre && !/^(À relancer|À faire au SAIO|Terminé|En attente)$/.test(f.next.titre) ? `<b>${esc(f.next.titre)}</b>` : "";
+  sous.push(`<button class="btn-lien" data-renom="${r.id}">renommer</button>`, `<button class="btn-lien rouge" data-suppr="${r.id}">supprimer</button>`,
+    `<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "✎ commentaire" : "+ commentaire"}</button>`);
+  const couleur = { relance: "ko", saio: "warn", attente: "wait", publie: "ok" }[f.cat_] || "wait";
+  const titre = f.cat_ === "relance" ? "À relancer" + (f.next.titre && f.next.titre !== "À relancer" ? " — " + f.next.titre.replace(/^À /, "à ") : "")
+    : f.cat_ === "saio" ? "À faire au SAIO" : f.next.titre;
+  const boutons = [f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
+    f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : ""].join(" ");
   return `<tr class="ligne-f" data-id="${r.id}">
-    <td class="f-nom"><b>${esc(r.Formation || "(sans intitulé)")}</b><small>${sous.join(" · ")}</small></td>
-    <td>${pastille(f)}</td>
-    <td class="raison">${titre}${esc(f.next.txt)}${r.Commentaire ? `<div class="com">${esc(r.Commentaire)}</div>` : ""}</td>
-    <td class="points">${points}<small>${prochaine < 0 ? "7/7" : ETAPES[prochaine].nom}</small></td>
-    <td class="outils">${outilsFormation(f)}</td></tr>`;
+    <td class="f-nom"><b>${esc(r.Formation || "(sans intitulé)")}</b><small>${sous.join(" · ")}</small>${r.Commentaire ? `<div class="com">${esc(r.Commentaire)}</div>` : ""}</td>
+    ${cases}
+    <td class="action ${couleur}"><b>${esc(titre)}</b><span>${esc(f.next.txt)}</span>${boutons.trim() ? `<div>${boutons}</div>` : ""}</td></tr>`;
 }
 
 // Onglet « Formations ouvertes » : ce qui compte pour la nouvelle campagne
@@ -798,8 +808,9 @@ function editerContact(etab, ancre) {
 // Prépare dans la messagerie (Thunderbird…) le mail avec les liens des fiches, puis coche « Lien envoyé »
 function preparerMail(etab, idsChoisis, ancre) {
   const k = norm(etab);
-  const candidats = ROWS.filter(r => norm(r.Etablissement) === k && !r.Lien_envoye && !ficheDe(r) && !(r.Origine && !r.Mail_recu) && r.Publiee !== "Publiée");
-  const choisis = new Set(idsChoisis && idsChoisis.length ? idsChoisis : candidats.map(r => r.id));
+  const candidats = ROWS.filter(r => norm(r.Etablissement) === k && !ficheDe(r) && !(r.Origine && !r.Mail_recu) && r.Publiee !== "Publiée");
+  const jamais = candidats.filter(r => !r.Lien_envoye);
+  const choisis = new Set(idsChoisis && idsChoisis.length ? idsChoisis : (jamais.length ? jamais : candidats).map(r => r.id));
   const email = contactDe(etab).email;
   const pop = nouvellePop("pop-large");
   if (!DEMO && !PARAM.URL_formulaire) {
@@ -814,7 +825,7 @@ function preparerMail(etab, idsChoisis, ancre) {
   pop.innerHTML = `<b>Envoyer la fiche de renseignement — ${esc(etab)}</b>
     <label>Adresse mail de l'établissement <input id="m-email" type="email" value="${esc(email)}" placeholder="contact@etablissement.fr"></label>
     <div><span class="rien">Formations à inclure (une fiche par formation, déjà pré-remplie) :</span>
-      ${candidats.map(r => `<label class="case"><input type="checkbox" value="${r.id}" ${choisis.has(r.id) ? "checked" : ""}> ${esc(r.Formation)}</label>`).join("")}</div>
+      ${candidats.map(r => `<label class="case"><input type="checkbox" value="${r.id}" ${choisis.has(r.id) ? "checked" : ""}> ${esc(r.Formation)}${r.Lien_envoye ? ` <span class="rien">(déjà envoyée le ${dateCourte(r.Lien_envoye)})</span>` : ""}</label>`).join("")}</div>
     <div class="pop-btns"><button class="btn" id="m-ok">✉ Préparer le mail</button><button class="btn gris" id="m-date">Déjà envoyé autrement : noter la date</button></div>
     <p class="rien">Le mail s'ouvre dans votre messagerie, prêt à partir : relisez-le et cliquez « Envoyer ». L'étape « Lien envoyé » est cochée à aujourd'hui.</p>`;
   placer(pop, ancre);
