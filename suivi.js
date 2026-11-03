@@ -192,13 +192,14 @@ function analyser(r, maintenant) {
     const pb = lie ? problemesCarif(lie) : [];
     const e6 = !CATALOGUE.length ? etat("todo") : r.Cle_carif === "ABSENTE" || pb.length ? etat("ko") : lie ? etat("done") : etat("todo");
     const h = { ...base, cat: lie, historique: true, e: ETAPES.map((x, i) => i === 5 ? e6 : etat("done")) };
-    const num = r.g_ta_cod ? " (n° " + r.g_ta_cod + ")" : "";
+    const pub = r.Publiee_le ? new Date(r.Publiee_le * 1000).toLocaleDateString("fr-FR", { timeZone: "UTC" }) : "";
+    const num = `Ouverte en ${cible - 1} sur Parcoursup${pub ? " (publiée le " + pub + ")" : ""}${r.g_ta_cod ? " · n° " + r.g_ta_cod : ""}`;
     if (!CATALOGUE.length) return { ...h, cat_: "attente", next: { cls: "warn", titre: "Revérification " + cible, txt: "Importer l'export Carif-Oref pour vérifier" } };
     if (r.Cle_carif === "ABSENTE") return { ...h, cat_: "relance", next: { cls: "ko", titre: "À corriger dans le Carif-Oref",
       txt: `Absente de l'export Carif-Oref : à redéclarer pour la rentrée ${cible}` } };
     if (!lie) return { ...h, rappro: true, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Retrouver la formation dans l'export Carif-Oref" } };
     if (pb.length) return { ...h, cat_: "relance", next: { cls: "ko", titre: "À corriger dans le Carif-Oref", txt: pb.join(" · ") } };
-    return { ...h, cat_: "parcoursup", next: { cls: "ok", titre: "Terminé", txt: `Déjà ouverte sur Parcoursup${num} · vérifiée pour la rentrée ${cible}` } };
+    return { ...h, cat_: "parcoursup", next: { cls: "ok", titre: "Terminé", txt: `${num} · vérifiée pour la rentrée ${cible}` } };
   }
   if (r.Publiee === "Publiée") return { ...base, cat_: "publie", next: { cls: "ok", titre: "Terminé", txt: "Publiée au catalogue national" } };
   if (e[3].s === "ko" || e[4].s === "ko") {
@@ -481,7 +482,8 @@ function ouvrirEtape(bouton, id, i) {
     corps = `<div class="pop-btns"><button class="btn vert" data-v="Conforme">Conforme</button><button class="btn rouge" data-v="À corriger">À corriger</button>${effacer}</div>`;
   } else {
     corps = `<p class="rien">À cocher après avoir cliqué « Publier » dans le catalogue national.</p>
-      <div class="pop-btns"><button class="btn vert" data-v="Publiée">Publiée au catalogue national</button>${effacer}</div>`;
+      <label>Publiée le <input type="date" id="pop-date" value="${versInput(r.Publiee_le) || versInput(aujourdhui())}"></label>
+      <div class="pop-btns"><button class="btn vert" data-v="Publiée">${r.Publiee === "Publiée" ? "Enregistrer la date" : "Publiée au catalogue national"}</button>${effacer}</div>`;
   }
   pop.innerHTML = `<b>${esc(r.Formation || "")} — ${et.nom}</b>${corps}`;
   placer(pop, bouton);
@@ -489,7 +491,7 @@ function ouvrirEtape(bouton, id, i) {
     const v = b.dataset.v, champs = {};
     if (v === "vide") { champs[et.col] = null; if (et.type === "pub") champs.Publiee_le = null; }
     else if (et.type === "date") { const d = document.getElementById("pop-date"); champs[et.col] = (d && depuisInput(d.value)) || aujourdhui(); }
-    else { champs[et.col] = v; if (et.type === "pub") champs.Publiee_le = aujourdhui(); }
+    else { champs[et.col] = v; if (et.type === "pub") { const d = document.getElementById("pop-date"); champs.Publiee_le = (d && depuisInput(d.value)) || aujourdhui(); } }
     fermerPop();
     await maj(id, champs);
   }));
