@@ -202,12 +202,15 @@ function analyser(r, maintenant) {
   const verif = v => v === "Conforme" ? etat("done") : v === "À corriger" ? etat("ko") : etat("todo");
   // UAI et RNCP vérifiés automatiquement avec l'export quand la formation y est retrouvée (le choix manuel reste prioritaire)
   const auto = verifAuto(fiche, cat);
+  // l'établissement indique dans la fiche que la formation n'est pas (encore) déclarée au Carif-Oref
+  const nonDeclaree = !!(fiche && /^non/i.test(String(fiche.Referencee_Carif_Oref || "")));
   const e = [
     r.Mail_recu ? etat("done", dateCourte(r.Mail_recu)) : etat("todo"),
     r.Lien_envoye ? etat("done", dateCourte(r.Lien_envoye)) : etat(ficheDate ? "done" : "todo"),
     ficheDate ? etat("done", dateCourte(ficheDate)) : etat("todo"),
     r.UAI ? verif(r.UAI) : auto.uai, r.RNCP ? verif(r.RNCP) : auto.rncp,
-    cat ? (problemesCarif(cat).length ? etat("ko") : etat("done")) : (r.Cle_carif === "ABSENTE" && CATALOGUE.length ? etat("ko") : etat("todo")),
+    cat ? (problemesCarif(cat).length ? etat("ko") : etat("done"))
+      : ((r.Cle_carif === "ABSENTE" || nonDeclaree) && CATALOGUE.length ? etat("ko") : etat("todo")),
     r.Publiee === "Publiée" ? etat("done", dateCourte(r.Publiee_le)) : etat("todo"),
   ];
   const base = { e, fiche, cat };
@@ -244,6 +247,8 @@ function analyser(r, maintenant) {
   if (e[3].s === "todo") return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Vérifier l'UAI (voir la fiche)" } };
   if (e[4].s === "todo") return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Vérifier le RNCP (voir la fiche)" } };
   // fiche non retrouvée automatiquement dans l'export : on la cherche à la main avant de conclure qu'elle est absente
+  if (!cat && CATALOGUE.length && nonDeclaree) return { ...base, cat_: "attente", depuis: ficheJ, motif: "à déclarer au Carif-Oref",
+    next: { cls: "wait", titre: ATT, txt: "Formation à déclarer au Carif-Oref (non référencée selon la fiche)" } };
   if (!cat && CATALOGUE.length && r.Cle_carif !== "ABSENTE") return { ...base, rappro: true, cat_: "saio",
     next: { cls: "warn", titre: "À faire au SAIO", txt: "Retrouver la formation dans l'export Carif-Oref" } };
   if (e[5].s === "ko") return { ...base, cat_: "attente", depuis: ficheJ, motif: "Carif-Oref à mettre à jour", next: { cls: "wait", titre: ATT,
