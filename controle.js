@@ -122,7 +122,7 @@ function detailControle(liste) {
     <p class="rien">${esc(ancien)}</p>
     <table class="c-table">${lignes}</table>
     <div class="c-bas"><div><b>Commentaire</b><textarea id="ctl-com" placeholder="Ce que vous avez constaté (page, bouton, formulaire…)">${esc(b.Commentaire)}</textarea></div>
-      <div class="ctl-capt" id="ctl-capt" tabindex="0"><b>Capture du site</b>
+      <div class="c-capt" id="ctl-capt" tabindex="0"><b>Capture du site</b>
         ${b.captures.map(x => `<img src="${x.url}" alt="capture">`).join("")}
         <small>${nbCaptures ? nbCaptures + " capture(s) déjà enregistrée(s) · " : ""}copiez une capture (Win+Maj+S) puis cliquez ici et collez (Ctrl+V)</small></div></div>
     <div class="c-actions"><span>Résultat : <b class="res ${res[0]}">${esc(res[1])}</b></span>
