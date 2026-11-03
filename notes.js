@@ -61,11 +61,43 @@ function ouvrirNotes(id) {
     <textarea id="n-texte" rows="3" placeholder="ex. appel du proviseur : la fiche sera remplie cette semaine"></textarea>
     ${autres.length ? `<label class="case"><input type="checkbox" id="n-toutes"> Ajouter aussi aux ${autres.length} autre${autres.length > 1 ? "s" : ""} formation${autres.length > 1 ? "s" : ""} de ${esc(r.Etablissement)}</label>` : ""}
     <div class="pop-btns"><button class="btn" id="n-ok">Ajouter la note</button></div>
-    ${ns.length ? `<ul class="notes">${ns.map(n => `<li><b>${esc(enteteNote(n))}</b><span>${esc(n.Texte || "")}</span></li>`).join("")}</ul>`
+    ${ns.length ? `<ul class="notes">${ns.map(n => `<li data-note="${n.id}"><b>${esc(enteteNote(n))}
+        <span class="n-actions"><button class="btn-lien" data-n-modif="${n.id}">modifier</button> · <button class="btn-lien rouge" data-n-suppr="${n.id}">supprimer</button></span></b>
+        <span class="n-texte">${esc(n.Texte || "")}</span></li>`).join("")}</ul>`
       : `<p class="rien">Aucune note pour le moment.</p>`}`;
   placer(pop, null);
   const f = document.getElementById("n-fermer"); if (f) f.addEventListener("click", fermerPop);
   const t = document.getElementById("n-texte"); if (t) t.focus();
+  // modifier une note : le texte devient éditable sur place
+  pop.querySelectorAll("[data-n-modif]").forEach(b => b.addEventListener("click", () => {
+    const nid = Number(b.dataset.nModif), n = NOTES.find(x => x.id === nid), li = pop.querySelector(`[data-note="${nid}"]`);
+    if (!n || !li) return;
+    const zone = li.querySelector(".n-texte");
+    zone.innerHTML = `<textarea rows="3" class="n-edit">${esc(n.Texte || "")}</textarea>
+      <span class="pop-btns"><button class="btn petit" data-n-save>Enregistrer</button><button class="btn petit gris" data-n-annul>Annuler</button></span>`;
+    const ta = zone.querySelector("textarea"); if (ta) ta.focus();
+    const an = zone.querySelector("[data-n-annul]"); if (an) an.addEventListener("click", () => ouvrirNotes(id));
+    const sv = zone.querySelector("[data-n-save]");
+    if (sv) sv.addEventListener("click", async () => {
+      const texte = ta ? ta.value.trim() : "";
+      if (!texte) { if (ta) ta.focus(); return; }
+      sv.disabled = true;
+      try {
+        if (DEMO) n.Texte = texte; else await actions([["UpdateRecord", "Notes", nid, { Texte: texte }]]);
+        if (DEMO) rendre(); else await charger();
+        ouvrirNotes(id);
+      } catch (e) { sv.disabled = false; alert("Échec de la modification : " + (e && e.message || e)); }
+    });
+  }));
+  pop.querySelectorAll("[data-n-suppr]").forEach(b => b.addEventListener("click", async () => {
+    const nid = Number(b.dataset.nSuppr);
+    if (!confirm("Supprimer cette note ?")) return;
+    try {
+      if (DEMO) NOTES = NOTES.filter(x => x.id !== nid); else await actions([["RemoveRecord", "Notes", nid]]);
+      if (DEMO) rendre(); else await charger();
+      ouvrirNotes(id);
+    } catch (e) { alert("Échec de la suppression : " + (e && e.message || e)); }
+  }));
   const ok = document.getElementById("n-ok");
   if (ok) ok.addEventListener("click", async () => {
     const el = document.getElementById("n-texte"), texte = el ? el.value.trim() : "";
