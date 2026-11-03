@@ -49,10 +49,8 @@ const LIB_ETAT = { afaire: "à contrôler", ok: "conforme", surv: "à surveiller
 function kpisControle() {
   const e = perimetreControle().map(etatControle);
   const n = s => e.filter(x => x.s === s).length;
-  return `<div class="kpi warn"><b>${n("afaire") + n("incomplet")}</b><span>à contrôler</span></div>
-    <div class="kpi ko"><b>${n("ko")}</b><span>non conformes</span></div>
-    <div class="kpi"><b>${n("surv")}</b><span>à surveiller</span></div>
-    <div class="kpi ok"><b>${n("ok")}</b><span>conformes</span></div>`;
+  return tuile("afaire", "warn", n("afaire") + n("incomplet"), "à contrôler") + tuile("ko", "ko", n("ko"), "non conformes")
+    + tuile("surv", "", n("surv"), "à surveiller") + tuile("ok", "ok", n("ok"), "conformes");
 }
 function aControler() { return perimetreControle().filter(r => ["afaire", "incomplet"].includes(etatControle(r).s)).length; }
 

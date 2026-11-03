@@ -6,8 +6,8 @@
 <title>Suivi des référencements</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js" defer></script>
 <script src="lib/xlsx.full.min.js" defer></script>
-<script src="controle.js?v=4" defer></script>
-<script src="suivi.js?v=35" defer></script>
+<script src="controle.js?v=5" defer></script>
+<script src="suivi.js?v=36" defer></script>
 <style>
   :root {
     --bg: #f6f6f6; --card: #ffffff; --text: #1e1e1e; --muted: #666; --line: #e5e5e5;
@@ -223,11 +223,18 @@
   .res.ok { color: var(--green); } .res.ko { color: var(--red); } .res.warn { color: var(--amber); } .res.wait { color: var(--muted); }
   .btn:disabled { opacity: .5; cursor: default; }
   @media (max-width: 900px) { .c-grille, .c-bas { grid-template-columns: 1fr; } .c-choix { width: auto; text-align: left; } }
+  .sous-entete { color: var(--muted); font-size: 13px; margin-top: 2px; display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+  .sous-entete .btn-lien { font-size: 13px; }
+  button.kpi { border: 1px solid transparent; font: inherit; cursor: pointer; color: inherit; }
+  button.kpi:hover { border-color: #c9cfe0; } button.kpi.actif { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); background: #eef1fb; }
+  .filtre-actif { font-size: 13px; background: #eef1fb; color: var(--blue); border-radius: 8px; padding: 6px 10px; white-space: nowrap; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Suivi des référencements en apprentissage<small id="sous-titre">Chargement…</small></h1>
+  <div><h1>Suivi des référencements en apprentissage</h1>
+    <div class="sous-entete"><span id="sous-titre">Chargement…</span>
+      <button class="btn-lien" id="importer" title="Récupère l'export Apprentissage sur la page CAP Métiers">↻ importer le nouvel export Carif-Oref</button></div></div>
   <div class="kpis" id="kpis"></div>
 </header>
 <div id="bandeaux"></div>
@@ -237,7 +244,6 @@
   <input id="q" type="search" placeholder="Rechercher un établissement, une formation, un site…">
   <span id="chips" class="chips"></span>
   <button class="btn-nouveau" id="nouveau">+ Nouvelle demande</button>
-  <button class="refresh" id="importer" title="Récupère l'export Apprentissage sur la page CAP Métiers">Importer l'export Carif-Oref</button>
   <input type="file" id="fichier-export" accept=".xlsb,.xlsx,.xls,.csv" hidden>
 </div>
 <main id="liste"></main>

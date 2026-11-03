@@ -298,11 +298,15 @@ async function ajouter(liste) {
 // ------------------------------------------------------------------ affichage principal
 
 let filtre = "tous", recherche = "";
+// Tuile de chiffre clé, cliquable pour filtrer la liste (un second clic retire le filtre)
+function tuile(f, cls, nb, lib) {
+  return `<button class="kpi ${cls}${filtre === f ? " actif" : ""}" data-f="${f}" title="${filtre === f ? "Retirer le filtre" : "Afficher seulement : " + esc(lib)}"><b>${nb}</b><span>${esc(lib)}</span></button>`;
+}
 let onglet = "demandes";
 try { const o = localStorage.getItem("suivi-onglet"); onglet = ["ouvertes", "controle"].includes(o) ? o : "demandes"; } catch (e) { /* stockage indisponible */ }
 const PASTILLE = { relance: ["ko", "À relancer"], saio: ["warn", "À faire SAIO"], attente: ["wait", "En attente"], publie: ["ok", "Publiée"], parcoursup: ["ok", "Publiable"], nonpub: ["wait", "Non publiable"] };
 const CHIPS = {
-  demandes: [["tous", "Tous"], ["saio", "À faire au SAIO"], ["attente", "En attente de l'établissement"], ["publie", "Publiées"]],
+  demandes: [["tous", "Tous"], ["saio", "À faire au SAIO"], ["attente", "En attente de l'établissement"], ["publie", "Publiées"], ["relance", "À relancer"]],
   ouvertes: [["tous", "Tous"], ["parcoursup", "Publiables"], ["nonpub", "Non publiables"], ["saio", "À retrouver dans l'export"]],
   controle: [["afaire", "À contrôler"], ["ko", "Non conformes"], ["surv", "À surveiller"], ["ok", "Conformes"], ["tous", "Tous"]],
 };
@@ -329,13 +333,14 @@ function rendre() {
   }
   const kpis = document.getElementById("kpis");
   const attentes = enAttente(groupes);
-  if (kpis) kpis.innerHTML = onglet === "controle" ? kpisControle() : onglet === "ouvertes" ? `
-    <div class="kpi ok"><b>${n("parcoursup")}</b><span>publiables ${rentreeCible()}</span></div>
-    <div class="kpi"><b>${n("nonpub")}</b><span>non publiables en l'état</span></div>
-    <div class="kpi warn"><b>${n("saio")}</b><span>à retrouver dans l'export</span></div>` : `
-    <div class="kpi warn"><b>${n("saio")}</b><span>à faire au SAIO</span></div>
-    <div class="kpi"><b>${n("attente")}</b><span>en attente des établissements</span></div>
-    <div class="kpi ok"><b>${n("publie")}</b><span>publiées</span></div>`;
+  if (kpis) {
+    kpis.innerHTML = onglet === "controle" ? kpisControle() : onglet === "ouvertes"
+      ? tuile("parcoursup", "ok", n("parcoursup"), "publiables " + rentreeCible()) + tuile("nonpub", "", n("nonpub"), "non publiables en l'état") + tuile("saio", "warn", n("saio"), "à retrouver dans l'export")
+      : tuile("saio", "warn", n("saio"), "à faire au SAIO") + tuile("attente", "", n("attente"), "en attente des établissements") + tuile("publie", "ok", n("publie"), "publiées");
+    kpis.querySelectorAll("[data-f]").forEach(b => b.addEventListener("click", () => { filtre = filtre === b.dataset.f ? "tous" : b.dataset.f; rendre(); }));
+  }
+  const nouv = document.getElementById("nouveau");
+  if (nouv) nouv.style.display = onglet === "demandes" ? "" : "none";
   const ban = document.getElementById("bandeaux");
   if (ban) ban.innerHTML = (DEMO ? `<div class="demo">Mode démonstration : données fictives (le widget n'est pas ouvert dans Grist).</div>` : "") +
     (!DEMO && !PARAM.URL_formulaire ? `<div class="banner">Le formulaire de fiche n'est pas encore publié : page « Formulaire fiche » → Publier, puis collez son adresse dans la page « Paramètres ». Les liens à envoyer se créeront alors tout seuls.</div>` : "");
@@ -354,17 +359,15 @@ function rendre() {
       <button class="onglet${onglet === "ouvertes" ? " on" : ""}" data-onglet="ouvertes">Formations ouvertes en ${cible - 1} — revérification ${cible} <span>${nOuv}</span>${badges(true)}</button>
       <button class="onglet${onglet === "controle" ? " on" : ""}" data-onglet="controle">Contrôle d'affichage${(() => { const n = aControler(); return n ? `<em class="b-warn">${n} à contrôler</em>` : ""; })()}</button>`;
     ong.querySelectorAll("[data-onglet]").forEach(b => b.addEventListener("click", () => {
-      onglet = b.dataset.onglet; filtre = onglet === "controle" ? "afaire" : "tous";
+      onglet = b.dataset.onglet; filtre = "tous";
       try { localStorage.setItem("suivi-onglet", onglet); } catch (e) { /* stockage indisponible */ }
       rendre();
     }));
   }
   const chips = document.getElementById("chips");
-  if (chips) {
-    if (!CHIPS[onglet].some(([k]) => k === filtre)) filtre = "tous";
-    chips.innerHTML = CHIPS[onglet].map(([k, l]) => `<button class="chip${filtre === k ? " on" : ""}" data-f="${k}">${l}</button>`).join("");
-    chips.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => { filtre = c.dataset.f; rendre(); }));
-  }
+  if (chips) chips.innerHTML = filtre !== "tous"
+    ? `<span class="filtre-actif">Filtre : ${esc((CHIPS[onglet].find(([k]) => k === filtre) || [, filtre])[1])} <button class="btn-lien" id="sans-filtre">✕ tout afficher</button></span>` : "";
+  const sf = document.getElementById("sans-filtre"); if (sf) sf.addEventListener("click", () => { filtre = "tous"; rendre(); });
   const q = norm(recherche);
   const garde = (g, f) => (filtre === "tous" || f.cat_ === filtre) && (!q || norm(g.nom).includes(q) || norm(f.r.Formation).includes(q) || norm(f.r.Lieu).includes(q));
   let html;
@@ -519,7 +522,7 @@ function panneaux(groupes, attentes) {
   pan.querySelectorAll("[data-fiche]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); voirFiche(Number(b.dataset.fiche)); }));
   pan.querySelectorAll("[data-rappro]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); rapprocher(Number(b.dataset.rappro)); }));
   pan.querySelectorAll("[data-contact]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); editerContact(b.dataset.contact, b); }));
-  const versListe = () => { rendre(); const l = document.getElementById("chips"); if (l) l.scrollIntoView({ behavior: "smooth" }); };
+  const versListe = () => { rendre(); const l = document.getElementById("q"); if (l) l.scrollIntoView({ behavior: "smooth" }); };
   pan.querySelectorAll("[data-voir-filtre]").forEach(b => b.addEventListener("click", () => {
     filtre = b.dataset.voirFiltre; recherche = ""; const q = document.getElementById("q"); if (q) q.value = ""; versListe();
   }));
