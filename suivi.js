@@ -336,11 +336,27 @@ function rendre() {
   let html;
   if (onglet === "ouvertes") {
     const ordre = { saio: 0, attente: 1, nonpub: 2, relance: 2, parcoursup: 3, publie: 3 };
-    const lignesO = groupes.flatMap(g => g.formations.filter(f => f.historique && garde(g, f)).map(f => ({ g, f })))
-      .sort((a, b) => ordre[a.f.cat_] - ordre[b.f.cat_] || a.g.nom.localeCompare(b.g.nom) || String(a.f.r.Formation).localeCompare(String(b.f.r.Formation)));
-    html = lignesO.length ? `<div class="carte-liste"><table class="liste-ouvertes">
-      <tr><th>Établissement</th><th>Formation</th><th>Retrouvée dans l'export</th><th>Diplôme</th><th>Session rentrée ${cible}</th><th>Statut</th></tr>
-      ${lignesO.map(x => ligneOuverte(x.g, x.f)).join("")}</table></div>` : "";
+    html = groupes.map(g => {
+      const fs = g.formations.filter(f => garde(g, f))
+        .sort((a, b) => ordre[a.cat_] - ordre[b.cat_] || String(a.r.Formation).localeCompare(String(b.r.Formation)));
+      if (!fs.length) return "";
+      const tot = g.formations.length, c = k => g.formations.filter(f => f.cat_ === k).length, pl = k => k > 1 ? "s" : "";
+      const ok = c("parcoursup"), np = c("nonpub"), ar = c("saio");
+      const tags = [ar ? `<span class="tag warn">${ar} à retrouver</span>` : "", np ? `<span class="tag wait">${np} non publiable${pl(np)}</span>` : "",
+        ok ? `<span class="tag ok">${ok} publiable${pl(ok)}</span>` : ""].join("");
+      const seg = (k, col) => k ? `<i style="width:${100 * k / tot}%;background:${col}"></i>` : "";
+      const ouvert = ouverts.has(g.cle) || !!q || filtre !== "tous";
+      return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
+        <div class="etab-head"><span class="chev">▶</span>
+          <div class="etab-name"><b>${esc(g.nom)}</b> <button class="btn-lien" data-renom-etab="${esc(g.nom)}" title="Renommer l'établissement">✎ renommer</button><span>${tot} formation${pl(tot)} ouverte${pl(tot)} en ${cible - 1}</span></div>
+          <div><div class="progress">${seg(ok, "var(--green)")}${seg(np, "#b9bec8")}${seg(ar, "#f5a000")}</div>
+            <div class="progress-label">${ok} / ${tot} publiable${pl(ok)} pour ${cible}</div></div>
+          <div class="tags">${tags}</div></div>
+        <div class="forms"><table class="liste-ouvertes">
+          <tr><th>Formation</th><th>Retrouvée dans l'export</th><th>Diplôme</th><th>Session rentrée ${cible}</th><th>Statut</th></tr>
+          ${fs.map(f => ligneOuverte(g, f)).join("")}</table></div>
+      </section>`;
+    }).join("");
   } else {
     html = groupes.map(g => {
       const toutesG = g.formations.filter(f => !f.historique);
@@ -528,7 +544,6 @@ function ligneOuverte(g, f) {
     ses = rok === false ? `${ko} ${d.length ? "dernière : " + d[d.length - 1].txt : "aucune pour " + rentreeCible()}` : rok ? `${ok} ${bonne ? bonne.txt : rentreeCible()}` : "?";
   }
   return `<tr class="ligne-o">
-    <td class="etab-cell"><b>${esc(g.nom)}</b></td>
     <td class="f-nom"><b>${esc(r.Formation || "")}</b><small>${sous.join(" · ")}</small>${r.Commentaire ? `<div class="com">${esc(r.Commentaire)}</div>` : ""}</td>
     <td class="export">${export_}</td><td class="ck">${dip}</td><td class="ck">${ses}</td>
     <td class="statut">${pastille(f)}<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "✎ commentaire" : "+ commentaire"}</button></td></tr>`;
