@@ -6,7 +6,7 @@
 <title>Suivi des référencements</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js" defer></script>
 <script src="lib/xlsx.full.min.js" defer></script>
-<script src="suivi.js?v=22" defer></script>
+<script src="suivi.js?v=23" defer></script>
 <style>
   :root {
     --bg: #f6f6f6; --card: #ffffff; --text: #1e1e1e; --muted: #666; --line: #e5e5e5;
@@ -172,6 +172,8 @@
   .tab-panneau .nb { text-align: right; font-weight: 700; font-size: 15px; color: var(--amber); width: 40px; }
   .btn.gris { background: var(--grey-bg); color: var(--text); }
   .btn-lien.gris { color: var(--muted); }
+  .tab-panneau .nb.gris { color: #555; }
+  .compte:not(.ko):not(.ok):not(.warn) { background: var(--grey-bg); color: #555; }
 </style>
 </head>
 <body>

@@ -198,11 +198,11 @@ function analyser(r, maintenant) {
     const pub = r.Publiee_le ? new Date(r.Publiee_le * 1000).toLocaleDateString("fr-FR", { timeZone: "UTC" }) : "";
     const num = `Ouverte en ${cible - 1} sur Parcoursup${pub ? " (publiée le " + pub + ")" : ""}${r.g_ta_cod ? " · n° " + r.g_ta_cod : ""}`;
     if (!CATALOGUE.length) return { ...h, cat_: "attente", next: { cls: "warn", titre: "Revérification " + cible, txt: "Importer l'export Carif-Oref pour vérifier" } };
-    if (r.Cle_carif === "ABSENTE") return { ...h, cat_: "relance", next: { cls: "ko", titre: "À corriger dans le Carif-Oref",
-      txt: `Absente de l'export Carif-Oref : à redéclarer pour la rentrée ${cible}` } };
+    if (r.Cle_carif === "ABSENTE") return { ...h, cat_: "nonpub", next: { cls: "wait", titre: "Non publiable pour " + cible,
+      txt: "Absente de l'export Carif-Oref" } };
     if (!lie) return { ...h, rappro: true, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Retrouver la formation dans l'export Carif-Oref" } };
-    if (pb.length) return { ...h, cat_: "relance", next: { cls: "ko", titre: "À corriger dans le Carif-Oref", txt: pb.join(" · ") } };
-    return { ...h, cat_: "parcoursup", next: { cls: "ok", titre: "Terminé", txt: `${num} · vérifiée pour la rentrée ${cible}` } };
+    if (pb.length) return { ...h, cat_: "nonpub", next: { cls: "wait", titre: "Non publiable pour " + cible, txt: pb.join(" · ").replace(/ → dates à mettre à jour/g, "") } };
+    return { ...h, cat_: "parcoursup", next: { cls: "ok", titre: "Publiable", txt: `${num} · publiable pour la rentrée ${cible}` } };
   }
   if (r.Publiee === "Publiée") return { ...base, cat_: "publie", next: { cls: "ok", titre: "Terminé", txt: "Publiée au catalogue national" } };
   if (e[3].s === "ko" || e[4].s === "ko") {
@@ -235,7 +235,7 @@ function construire(rows, maintenant = aujourdhui()) {
     if (!groupes.has(k)) groupes.set(k, { cle: k, nom, formations: [] });
     groupes.get(k).formations.push({ r, ...analyser(r, maintenant) });
   }
-  const ordre = { relance: 0, saio: 1, attente: 2, publie: 3, parcoursup: 4 };
+  const ordre = { relance: 0, saio: 1, attente: 2, nonpub: 3, publie: 4, parcoursup: 4 };
   const gs = [...groupes.values()];
   for (const g of gs) g.formations.sort((a, b) => ordre[a.cat_] - ordre[b.cat_] || String(a.r.Formation).localeCompare(String(b.r.Formation)));
   const actif = g => g.formations.some(f => f.cat_ !== "parcoursup");
@@ -267,10 +267,10 @@ async function ajouter(liste) {
 let filtre = "tous", recherche = "";
 let onglet = "demandes";
 try { onglet = localStorage.getItem("suivi-onglet") === "ouvertes" ? "ouvertes" : "demandes"; } catch (e) { /* stockage indisponible */ }
-const PASTILLE = { relance: ["ko", "À relancer"], saio: ["warn", "À faire SAIO"], attente: ["wait", "En attente"], publie: ["ok", "Publiée"], parcoursup: ["ok", "Terminé"] };
+const PASTILLE = { relance: ["ko", "À relancer"], saio: ["warn", "À faire SAIO"], attente: ["wait", "En attente"], publie: ["ok", "Publiée"], parcoursup: ["ok", "Publiable"], nonpub: ["wait", "Non publiable"] };
 const CHIPS = {
   demandes: [["tous", "Tous"], ["relance", "À relancer"], ["saio", "À faire SAIO"], ["attente", "En attente"], ["publie", "Publiées"]],
-  ouvertes: [["tous", "Tous"], ["relance", "À relancer"], ["saio", "À faire SAIO"], ["parcoursup", "Vérifiées"]],
+  ouvertes: [["tous", "Tous"], ["parcoursup", "Publiables"], ["nonpub", "Non publiables"], ["saio", "À retrouver dans l'export"]],
 };
 const ouverts = new Set();
 
@@ -295,7 +295,10 @@ function rendre() {
   }
   const kpis = document.getElementById("kpis");
   const relances = aRelancer(groupes, maintenant);
-  if (kpis) kpis.innerHTML = `
+  if (kpis) kpis.innerHTML = onglet === "ouvertes" ? `
+    <div class="kpi ok"><b>${n("parcoursup")}</b><span>publiables ${rentreeCible()}</span></div>
+    <div class="kpi"><b>${n("nonpub")}</b><span>non publiables en l'état</span></div>
+    <div class="kpi warn"><b>${n("saio")}</b><span>à retrouver dans l'export</span></div>` : `
     <div class="kpi ko"><b>${relances.filter(x => !x.masque).length}</b><span>établissements à relancer</span></div>
     <div class="kpi warn"><b>${n("saio")}</b><span>à faire au SAIO</span></div>
     <div class="kpi"><b>${n("attente")}</b><span>en attente</span></div>
@@ -309,7 +312,9 @@ function rendre() {
   const cible = rentreeCible();
   const nDem = toutes.filter(f => !f.historique).length, nOuv = toutes.filter(f => f.historique).length;
   const aRel = h => toutes.filter(f => !!f.historique === h && f.cat_ === "relance").length, aSaio = h => toutes.filter(f => !!f.historique === h && f.cat_ === "saio").length;
-  const badges = h => (aRel(h) ? `<em class="b-ko">${aRel(h)} à relancer</em>` : "") + (aSaio(h) ? `<em class="b-warn">${aSaio(h)} à faire</em>` : "");
+  const badges = h => h
+    ? (aSaio(h) ? `<em class="b-warn">${aSaio(h)} à retrouver</em>` : "")
+    : (aRel(h) ? `<em class="b-ko">${aRel(h)} à relancer</em>` : "") + (aSaio(h) ? `<em class="b-warn">${aSaio(h)} à faire</em>` : "");
   const ong = document.getElementById("onglets");
   if (ong) {
     ong.innerHTML = `<button class="onglet${onglet === "demandes" ? " on" : ""}" data-onglet="demandes">Nouvelles demandes <span>${nDem}</span>${badges(false)}</button>
@@ -330,7 +335,7 @@ function rendre() {
   const garde = (g, f) => (filtre === "tous" || f.cat_ === filtre) && (!q || norm(g.nom).includes(q) || norm(f.r.Formation).includes(q) || norm(f.r.Lieu).includes(q));
   let html;
   if (onglet === "ouvertes") {
-    const ordre = { relance: 0, saio: 1, attente: 2, parcoursup: 3, publie: 3 };
+    const ordre = { saio: 0, attente: 1, nonpub: 2, relance: 2, parcoursup: 3, publie: 3 };
     const lignesO = groupes.flatMap(g => g.formations.filter(f => f.historique && garde(g, f)).map(f => ({ g, f })))
       .sort((a, b) => ordre[a.f.cat_] - ordre[b.f.cat_] || a.g.nom.localeCompare(b.g.nom) || String(a.f.r.Formation).localeCompare(String(b.f.r.Formation)));
     html = lignesO.length ? `<div class="carte-liste"><table class="liste-ouvertes">
@@ -417,7 +422,21 @@ function panneaux(groupes, relances) {
     parAction.get(k).push(t);
   }
   const ordreAct = [...parAction].sort((a, b) => b[1].length - a[1].length);
-  pan.innerHTML = `
+  // onglet des formations ouvertes : pas de relance, un simple état des lieux de ce qui n'est pas publiable
+  const np = groupes.flatMap(g => g.formations.filter(f => f.cat_ === "nonpub"));
+  const parMotif = new Map();
+  np.forEach(f => motifsCourts(f.next.txt).forEach(k => parMotif.set(k, (parMotif.get(k) || 0) + 1)));
+  const gaucheOuvertes = `<section class="panneau"><h2>Non publiables pour ${rentreeCible()} en l'état <span class="compte">${np.length}</span></h2>
+    <p class="rien">Pour information : une formation qui ne rouvre pas n'a pas à se signaler, il n'y a donc pas de relance à faire.
+      Elle redeviendra publiable d'elle-même si l'établissement met à jour le Carif-Oref.</p>
+    ${np.length ? `<table class="tab-panneau">${[...parMotif].sort((a, b) => b[1] - a[1]).map(([k, v]) =>
+      `<tr><td><b>${esc(/^dates de session/.test(k) ? "Pas de session à la rentrée " + rentreeCible() : k.charAt(0).toUpperCase() + k.slice(1))}</b></td><td class="nb gris">${v}</td></tr>`).join("")}</table>
+      <button class="btn petit gris" data-voir-filtre="nonpub">Afficher ces formations</button>` : ""}</section>`;
+  pan.innerHTML = onglet === "ouvertes" ? gaucheOuvertes + `
+    <section class="panneau"><h2>À faire au SAIO <span class="compte ${taches.length ? "warn" : "ok"}">${taches.length}</span></h2>
+      ${taches.length ? `<p>${taches.length} formation${taches.length > 1 ? "s" : ""} à retrouver dans l'export Carif-Oref (une seule fois par formation).</p>
+        <button class="btn petit" data-voir-filtre="saio">Afficher ces formations</button>` : `<p class="rien">Toutes les formations sont retrouvées dans l'export.</p>`}
+    </section>` : `
     <section class="panneau"><h2>À relancer <span class="compte ${act.length ? "ko" : "ok"}">${act.length} établissement${act.length > 1 ? "s" : ""}</span></h2>
       ${act.length ? `<table class="tab-panneau">${vus.map(ligneRelance).join("")}</table>
         ${act.length > MAX ? `<button class="btn-lien" id="relances-toutes">${RELANCES_TOUTES ? "Réduire" : `Afficher les ${act.length - MAX} autres établissements`}</button>` : ""}`
@@ -446,6 +465,9 @@ function panneaux(groupes, relances) {
   pan.querySelectorAll("[data-rappro]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); rapprocher(Number(b.dataset.rappro)); }));
   pan.querySelectorAll("[data-contact]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); editerContact(b.dataset.contact, b); }));
   const versListe = () => { rendre(); const l = document.getElementById("chips"); if (l) l.scrollIntoView({ behavior: "smooth" }); };
+  pan.querySelectorAll("[data-voir-filtre]").forEach(b => b.addEventListener("click", () => {
+    filtre = b.dataset.voirFiltre; recherche = ""; const q = document.getElementById("q"); if (q) q.value = ""; versListe();
+  }));
   pan.querySelectorAll("[data-voir-saio]").forEach(b => b.addEventListener("click", () => {
     filtre = "saio"; recherche = ""; const q = document.getElementById("q"); if (q) q.value = ""; versListe();
   }));
@@ -456,7 +478,10 @@ function panneaux(groupes, relances) {
   }));
 }
 
-function pastille(f) { const [cls, txt] = PASTILLE[f.cat_] || ["wait", ""]; return `<span class="pill ${cls}">${txt}</span>`; }
+function pastille(f) {
+  const [cls, txt] = f.historique && f.cat_ === "saio" ? ["warn", "À retrouver"] : PASTILLE[f.cat_] || ["wait", ""];
+  return `<span class="pill ${cls}">${txt}</span>`;
+}
 
 function outilsFormation(f) {
   const r = f.r;
