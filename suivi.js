@@ -672,6 +672,20 @@ function ouvrirEtape(bouton, id, i) {
     return;
   }
   if (et.col === "Lien_envoye" && !r.Lien_envoye) { preparerMail(r.Etablissement, [id], bouton); return; }
+  // la fiche arrive par le formulaire en ligne : la case ouvre la fiche ; la saisie d'une date n'est qu'un recours (fiche reçue autrement)
+  if (et.col === "Fiche_recue" && !r.Fiche_recue) {
+    if (ficheDe(r)) { voirFiche(id); return; }
+    const p0 = nouvellePop();
+    p0.innerHTML = `<b>${esc(r.Formation || "")} — Fiche reçue</b>
+      <p class="rien">Cette étape se valide toute seule quand l'établissement remplit le formulaire en ligne.</p>
+      <details><summary class="rien" style="cursor:pointer">Fiche reçue autrement (mail, papier) ?</summary>
+        <label>Reçue le <input type="date" id="pop-date" value="${versInput(aujourdhui())}"></label>
+        <div class="pop-btns"><button class="btn gris" id="pop-fiche-ok">Noter la date</button></div></details>`;
+    placer(p0, bouton);
+    const okb = document.getElementById("pop-fiche-ok");
+    if (okb) okb.addEventListener("click", async () => { const d = document.getElementById("pop-date"); fermerPop(); await maj(id, { Fiche_recue: (d && depuisInput(d.value)) || aujourdhui() }); });
+    return;
+  }
   const effacer = r[et.col] ? `<button class="btn gris" data-v="vide">Effacer</button>` : "";
   let corps;
   if (et.type === "date") {
