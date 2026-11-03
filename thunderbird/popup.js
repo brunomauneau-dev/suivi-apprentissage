@@ -78,9 +78,12 @@ async function demarrer() {
     document.getElementById("regler").onclick = () => browser.runtime.openOptionsPage();
     return;
   }
-  const a = analyserMail({ author: mail.entete.author, texte: mail.plain, html: mail.html });
-  const connu = etablissementConnu(lignes, a.contact_email, a.etablissement);
+  const a = analyserMail({ author: mail.entete.author, texte: mail.plain, html: mail.html, sujet: mail.entete.subject });
+  // l'établissement écrit dans le mail (signature) prime ; l'adresse de l'expéditeur ne sert que s'il n'y en a pas
+  const parMail = etablissementConnu(lignes, a.contact_email, "");
+  const connu = a.etablissement_signe ? etablissementConnu(lignes, "", a.etablissement) : (parMail || etablissementConnu(lignes, "", a.etablissement));
   const etab = connu || a.etablissement;
+  const autreEtab = parMail && norm(parMail) !== norm(etab) ? parMail : "";
   const deja = connu ? lignes.find(l => l.Etablissement === connu && (l.Contact_nom || l.Contact_tel || l.Contact_email)) || {} : {};
   const noms = [...new Set(lignes.map(l => l.Etablissement).filter(Boolean))].sort((x, y) => x.localeCompare(y, "fr"));
 
@@ -89,6 +92,7 @@ async function demarrer() {
     <input id="etab" list="etabs" value="${esc(etab)}" placeholder="Nom de l'établissement">
     <datalist id="etabs">${noms.map(n => `<option value="${esc(n)}">`).join("")}</datalist>
     <div id="etat-etab" class="connu"></div>
+    ${autreEtab ? `<div class="aide">Cette adresse est aussi celle du contact de <a href="#" id="autre-etab">${esc(autreEtab)}</a>.</div>` : ""}
     <div class="ligne">
       <div><label for="cnom">Contact (nom, fonction)</label><input id="cnom" value="${esc(a.contact_nom || deja.Contact_nom || "")}"></div>
       <div><label for="ctel">Téléphone</label><input id="ctel" value="${esc(a.contact_tel || deja.Contact_tel || "")}"></div>
@@ -117,6 +121,8 @@ async function demarrer() {
     $("ajouter").disabled = !$("etab").value.trim() || nouvelles < 1;
   };
   ["etab", "forms"].forEach(id => $(id).addEventListener("input", majAide));
+  const ae = $("autre-etab");
+  if (ae) ae.onclick = ev => { ev.preventDefault(); $("etab").value = autreEtab; majAide(); };
   majAide();
 
   $("ajouter").onclick = async () => {

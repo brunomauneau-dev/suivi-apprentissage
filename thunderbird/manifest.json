@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Suivi référencements apprentissage",
   "description": "Ajoute la demande de référencement du mail ouvert au suivi Grist du SAIO.",
-  "version": "1.2",
+  "version": "1.3",
   "author": "SAIO Bordeaux",
   "browser_specific_settings": {
     "gecko": {
