@@ -583,8 +583,14 @@ async function renommerFormation(id) {
 async function supprimerFormation(id) {
   const r = ROWS.find(x => x.id === id); if (!r) return;
   if (!confirm("Supprimer « " + (r.Formation || "") + " » du suivi ?")) return;
-  if (DEMO) { ROWS = ROWS.filter(x => x.id !== id); rendre(); return; }
-  await actions([["RemoveRecord", "Suivi", id]]); await charger();
+  // ses notes et son contrôle d'affichage partent avec elle (sinon ils resteraient orphelins dans Grist)
+  const notes = NOTES.filter(n => Number(n.Formation) === id).map(n => n.id);
+  const aff = AFFICHAGE.filter(a => Number(a.Formation) === id).map(a => a.id);
+  if (DEMO) { ROWS = ROWS.filter(x => x.id !== id); NOTES = NOTES.filter(n => !notes.includes(n.id)); rendre(); return; }
+  await actions([["RemoveRecord", "Suivi", id],
+    ...(notes.length ? [["BulkRemoveRecord", "Notes", notes]] : []),
+    ...(aff.length ? [["BulkRemoveRecord", "Affichage", aff]] : [])]);
+  await charger();
 }
 
 // Petit menu « ⋯ » d'un établissement
