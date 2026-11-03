@@ -345,7 +345,7 @@ function rendre() {
       const tags = [ar ? `<span class="tag warn">${ar} à retrouver</span>` : "", np ? `<span class="tag wait">${np} non publiable${pl(np)}</span>` : "",
         ok ? `<span class="tag ok">${ok} publiable${pl(ok)}</span>` : ""].join("");
       const seg = (k, col) => k ? `<i style="width:${100 * k / tot}%;background:${col}"></i>` : "";
-      const ouvert = ouverts.has(g.cle) || !!q || filtre !== "tous";
+      const ouvert = ouverts.has(g.cle) || !!q;
       return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
         <div class="etab-head"><span class="chev">▶</span>
           <div class="etab-name"><b>${esc(g.nom)}</b> <button class="btn-lien" data-renom-etab="${esc(g.nom)}" title="Renommer l'établissement">✎ renommer</button><span>${tot} formation${pl(tot)} ouverte${pl(tot)} en ${cible - 1}</span></div>
@@ -367,7 +367,7 @@ function rendre() {
       const pl = k => k > 1 ? "s" : "";
       const tags = [rel ? `<span class="tag ko">${rel} à relancer</span>` : "", sai ? `<span class="tag warn">${sai} à faire SAIO</span>` : "",
         att ? `<span class="tag wait">${att} en attente</span>` : "", fin ? `<span class="tag ok">${fin} publiée${pl(fin)}</span>` : ""].join("");
-      const ouvert = ouverts.has(g.cle) || !!q || filtre !== "tous" || groupes.filter(x => x.formations.some(f => !f.historique)).length <= 3;
+      const ouvert = ouverts.has(g.cle) || !!q;
       const aEnvoyer = toutesG.filter(f => !f.r.Lien_envoye && !f.fiche && f.cat_ !== "publie").length;
       return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
         <div class="etab-head"><span class="chev">▶</span>
