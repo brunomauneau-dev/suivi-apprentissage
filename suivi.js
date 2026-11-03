@@ -89,6 +89,8 @@ function indexer() {
     c._sf = chiffres(c.Siret_formateur).padStart(14, "0"); c._sg = chiffres(c.Siret_gestionnaire).padStart(14, "0");
     c._uai = code(c.UAI_validee); c._rncp = chiffres(c.Code_RNCP); c._cfd = code(c.Code_scolarite).padStart(8, "0");
     ajoute(INDEX.siret, c._sf, c); if (c._sg !== c._sf) ajoute(INDEX.siret, c._sg, c); ajoute(INDEX.uai, c._uai, c);
+    c._torg = jetons(c.Formateur_RS, c.Gestionnaire_RS); c._tform = jetons(c.Libelle_formation, c.Diplome || "");
+    c._tlieu = jetons(c.Formateur_RS, c.Ville, c.Adresse_de_formation);
   }
 }
 
@@ -115,6 +117,58 @@ function trouverCatalogue(f) {
   return best;
 }
 
+// Formations historiques (déjà sur Parcoursup, sans fiche ni codes) : rapprochées une fois pour toutes d'une formation
+// de l'export (colonne Suivi.Cle_carif = clé de l'export, ou « ABSENTE »), automatiquement quand c'est sûr, sinon à la main.
+const MOTS_VIDES = new Set("de du des la le les et en a l d au aux pour par sur dans bts formation formations professionnelle professionnel services production agricole titre apprentissage alternance contrat bac specialite option campus diplome niveau ecole ecoles management commerce cfa site".split(" "));
+function jetons(...txt) {
+  return new Set(txt.join(" ").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length > 2 && !MOTS_VIDES.has(t)));
+}
+const part = (a, b) => { if (!a.size) return 0; let n = 0; for (const t of a) if (b.has(t)) n++; return n / a.size; };
+const estHistorique = r => !!(r.Origine && !r.Mail_recu && !ficheDe(r));
+
+function catalogueLie(r) {
+  if (!r.Cle_carif || r.Cle_carif === "ABSENTE") return null;
+  return CATALOGUE.find(c => c.Cle_ME === r.Cle_carif) || null;
+}
+
+// Formations de l'export qui peuvent correspondre, les plus probables d'abord ; sur = un seul candidat nettement en tête
+function candidatsHistorique(r) {
+  if (!INDEX) indexer();
+  const etab = jetons(r.Etablissement);
+  const intitule = String(r.Formation || "").replace(/\(([^)]*)\)\s*(- en apprentissage)?\s*$/i, "");
+  const precision = jetons(r.Lieu || "", (String(r.Formation || "").match(/\(([^)]*)\)\s*(- en apprentissage)?\s*$/i) || [])[1] || "");
+  const form = jetons(intitule);
+  const liste = [];
+  for (const c of CATALOGUE) {
+    const se = part(etab, c._torg);
+    if (se < 0.5) continue;
+    const sf = part(form, c._tform);
+    if (sf < 0.5) continue;
+    const sl = precision.size ? part(precision, c._tlieu) : 0;
+    liste.push({ c, score: se + sf + sl + (c.Statut_catalogue === "Publiée" ? 0.1 : 0), sf });
+  }
+  liste.sort((a, b) => b.score - a.score);
+  const sur = liste.length > 0 && liste[0].sf >= 0.6 && (liste.length === 1 || liste[1].score < liste[0].score - 0.25);
+  return { liste, sur };
+}
+
+// Rapproche automatiquement les cas sûrs (une seule fois par chargement)
+let RAPPRO_FAIT = false;
+async function rapprocherAuto() {
+  if (RAPPRO_FAIT || !CATALOGUE.length) return false;
+  RAPPRO_FAIT = true;
+  const ids = [], cles = [];
+  for (const r of ROWS) {
+    if (r.Cle_carif || !estHistorique(r)) continue;
+    const { liste, sur } = candidatsHistorique(r);
+    if (sur) { ids.push(r.id); cles.push(liste[0].c.Cle_ME); }
+  }
+  if (!ids.length) return false;
+  if (DEMO) { ids.forEach((id, i) => { ROWS.find(x => x.id === id).Cle_carif = cles[i]; }); return true; }
+  await actions([["BulkUpdateRecord", "Suivi", ids, { Cle_carif: cles }]]);
+  return true;
+}
+
 // ------------------------------------------------------------------ logique de suivi
 
 function analyser(r, maintenant) {
@@ -132,9 +186,20 @@ function analyser(r, maintenant) {
     r.Publiee === "Publiée" ? etat("done", dateCourte(r.Publiee_le)) : etat("todo"),
   ];
   const base = { e, fiche, cat };
-  // déjà ouverte sur Parcoursup : le circuit complet a été fait, toutes les étapes sont validées
-  if (r.Origine && !r.Mail_recu && !fiche) return { ...base, e: ETAPES.map(() => etat("done")), cat_: "parcoursup",
-    next: { cls: "ok", titre: "Terminé", txt: "Déjà ouverte sur Parcoursup" + (r.g_ta_cod ? " (n° " + r.g_ta_cod + ")" : "") } };
+  // déjà ouverte sur Parcoursup : le circuit complet a été fait ; à chaque campagne on revérifie seulement l'export Carif-Oref
+  if (r.Origine && !r.Mail_recu && !fiche) {
+    const lie = catalogueLie(r), cible = rentreeCible();
+    const pb = lie ? problemesCarif(lie) : [];
+    const e6 = !CATALOGUE.length ? etat("todo") : r.Cle_carif === "ABSENTE" || pb.length ? etat("ko") : lie ? etat("done") : etat("todo");
+    const h = { ...base, cat: lie, historique: true, e: ETAPES.map((x, i) => i === 5 ? e6 : etat("done")) };
+    const num = r.g_ta_cod ? " (n° " + r.g_ta_cod + ")" : "";
+    if (!CATALOGUE.length) return { ...h, cat_: "attente", next: { cls: "warn", titre: "Revérification " + cible, txt: "Importer l'export Carif-Oref pour vérifier" } };
+    if (r.Cle_carif === "ABSENTE") return { ...h, cat_: "relance", next: { cls: "ko", titre: "À corriger dans le Carif-Oref",
+      txt: `Absente de l'export Carif-Oref : à redéclarer pour la rentrée ${cible}` } };
+    if (!lie) return { ...h, rappro: true, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Retrouver la formation dans l'export Carif-Oref" } };
+    if (pb.length) return { ...h, cat_: "relance", next: { cls: "ko", titre: "À corriger dans le Carif-Oref", txt: pb.join(" · ") } };
+    return { ...h, cat_: "parcoursup", next: { cls: "ok", titre: "Terminé", txt: `Déjà ouverte sur Parcoursup${num} · vérifiée pour la rentrée ${cible}` } };
+  }
   if (r.Publiee === "Publiée") return { ...base, cat_: "publie", next: { cls: "ok", titre: "Terminé", txt: "Publiée au catalogue national" } };
   if (e[3].s === "ko" || e[4].s === "ko") {
     const statut = v => v === "Conforme" ? "conforme" : v === "À corriger" ? "à corriger" : "à vérifier";
@@ -287,7 +352,8 @@ function panneaux(groupes, relances) {
     </section>
     <section class="panneau"><h2>À faire au SAIO <span class="compte ${taches.length ? "warn" : "ok"}">${taches.length}</span></h2>
       ${taches.length ? `<ul class="taches">${taches.map(t => `<li><span class="tag warn">${esc(t.f.next.txt)}</span> ${esc(t.etab)} — ${esc(t.f.r.Formation)}
-          ${t.f.fiche ? ` <button class="btn-lien" data-fiche="${t.f.r.id}">voir la fiche</button>` : ""}</li>`).join("")}</ul>`
+          ${t.f.fiche ? ` <button class="btn-lien" data-fiche="${t.f.r.id}">voir la fiche</button>` : ""}
+          ${t.f.rappro ? ` <button class="btn-lien" data-rappro="${t.f.r.id}">retrouver dans l'export</button>` : ""}</li>`).join("")}</ul>`
         : `<p class="rien">Rien à faire pour le moment.</p>`}
     </section>`;
   pan.querySelectorAll("[data-relance]").forEach(b => b.addEventListener("click", async () => {
@@ -297,6 +363,7 @@ function panneaux(groupes, relances) {
     await charger();
   }));
   pan.querySelectorAll("[data-fiche]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); voirFiche(Number(b.dataset.fiche)); }));
+  pan.querySelectorAll("[data-rappro]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); rapprocher(Number(b.dataset.rappro)); }));
 }
 
 function ligneFormation(f) {
@@ -311,6 +378,7 @@ function ligneFormation(f) {
   if (r.Lien_Parcoursup) sous.push(`<a href="${esc(r.Lien_Parcoursup)}" target="_blank" rel="noopener">fiche Parcoursup</a>`);
   const outils = [
     f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
+    f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : "",
     `<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "Commentaire" : "+ Commentaire"}</button>`].join("");
   return `<div class="form" data-id="${r.id}">
     <div class="form-name"><b>${esc(r.Formation || "(sans intitulé)")}</b><span>${sous.join(" · ")}</span>
@@ -360,6 +428,7 @@ function brancher(zone) {
   }));
   zone.querySelectorAll("[data-mail]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); preparerMail(b.dataset.mail, null, b); }));
   zone.querySelectorAll("[data-fiche]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); voirFiche(Number(b.dataset.fiche)); }));
+  zone.querySelectorAll("[data-rappro]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); rapprocher(Number(b.dataset.rappro)); }));
   zone.querySelectorAll("[data-lien]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); copierLien(b, Number(b.dataset.lien)); }));
 }
 
@@ -391,6 +460,7 @@ function ouvrirEtape(bouton, id, i) {
   const pop = nouvellePop();
   if (et.type === "auto") {
     const f = construire([r])[0].formations[0];
+    if (f.historique) { rapprocher(id); return; }
     pop.innerHTML = `<b>${esc(r.Formation)} — Carif-Oref</b><p class="rien">Cette étape se vérifie automatiquement : elle est validée quand la formation de la fiche
       est trouvée dans l'export Carif-Oref (même organisme + même RNCP ou code diplôme).</p>
       <p>${f.cat ? "✓ Trouvée dans l'export : <b>" + esc(f.cat.Libelle_formation) + "</b> (" + esc(f.cat.Formateur_RS) + ")"
@@ -422,6 +492,47 @@ function ouvrirEtape(bouton, id, i) {
     else { champs[et.col] = v; if (et.type === "pub") champs.Publiee_le = aujourdhui(); }
     fermerPop();
     await maj(id, champs);
+  }));
+}
+
+// Choix de la formation de l'export qui correspond à une formation historique
+function rapprocher(id, recherche) {
+  const r = ROWS.find(x => x.id === id);
+  if (!r) return;
+  if (!CATALOGUE.length) { const pop = nouvellePop(); pop.innerHTML = `<b>${esc(r.Formation)}</b><p class="rien">Importez d'abord l'export Carif-Oref.</p>`; placer(pop, null); return; }
+  if (!INDEX) indexer();
+  const lie = catalogueLie(r);
+  let liste;
+  if (recherche && recherche.trim().length >= 3) {
+    const q = jetons(recherche);
+    liste = CATALOGUE.map(c => ({ c, score: part(q, new Set([...c._torg, ...c._tform, ...c._tlieu])) })).filter(x => x.score >= 0.99 || (q.size > 1 && x.score >= 0.6))
+      .sort((a, b) => b.score - a.score).slice(0, 25);
+  } else liste = candidatsHistorique(r).liste.slice(0, 8);
+  const ligne = c => {
+    const pb = problemesCarif(c);
+    return `<tr class="${lie && lie.Cle_ME === c.Cle_ME ? "choisi" : ""}"><td><b>${esc(c.Libelle_formation)}</b><div class="rien">${esc(c.Formateur_RS)}${c.Gestionnaire_RS && c.Gestionnaire_RS !== c.Formateur_RS ? " · gest. " + esc(c.Gestionnaire_RS) : ""}</div></td>
+      <td>${esc(c.Ville)} ${esc(String(c.CP || "").slice(0, 2))}</td><td>${esc(c.UAI_validee)}</td><td>${esc(c.Statut_catalogue)}</td>
+      <td>${pb.length ? '<span class="ko">✗</span> ' + esc(pb.map(x => /archiv/.test(x) ? "diplôme archivé" : "pas de session à la rentrée").join(" · ")) + `<div class="rien">${esc(texteRentree(c))}</div>` : '<span class="ok">✓</span> publiable'}</td>
+      <td><button class="btn petit vert" data-choix="${esc(c.Cle_ME)}">C'est celle-ci</button></td></tr>`;
+  };
+  const pop = nouvellePop("pop-fiche");
+  pop.innerHTML = `<div class="fiche-tete"><b>Retrouver dans l'export Carif-Oref — ${esc(r.Etablissement)} · ${esc(r.Formation)}</b><button class="btn gris petit" id="pop-fermer">Fermer</button></div>
+    <p class="rien">Formation déjà ouverte sur Parcoursup${r.g_ta_cod ? ` (<a href="${esc(r.Lien_Parcoursup || "#")}" target="_blank" rel="noopener">fiche n° ${esc(r.g_ta_cod)}</a>)` : ""} :
+      indiquez une fois pour toutes la formation de l'export qui lui correspond (même site). Elle sera ensuite contrôlée à chaque import.</p>
+    ${lie ? `<p>Actuellement rapprochée de : <b>${esc(lie.Libelle_formation)}</b> — ${esc(lie.Formateur_RS)} (${esc(lie.Ville)})</p>` : ""}
+    <div class="ligne-recherche"><input id="rappro-q" placeholder="Chercher dans l'export : organisme, ville, intitulé…" value="${esc(recherche || "")}">
+      <button class="btn petit" id="rappro-chercher">Chercher</button></div>
+    ${liste.length ? `<table class="comp rappro"><tr><th>Formation de l'export</th><th>Ville</th><th>UAI</th><th>Catalogue</th><th>Rentrée ${rentreeCible()}</th><th></th></tr>${liste.map(x => ligne(x.c)).join("")}</table>`
+      : `<p class="rien">Aucune formation proposée : cherchez par nom d'organisme ou de ville.</p>`}
+    <div class="pop-btns"><button class="btn rouge" data-choix="ABSENTE">Elle n'est pas dans l'export</button>${r.Cle_carif ? `<button class="btn gris" data-choix="">Annuler le rapprochement</button>` : ""}</div>`;
+  placer(pop, null);
+  const fer = document.getElementById("pop-fermer"); if (fer) fer.addEventListener("click", fermerPop);
+  const q = document.getElementById("rappro-q"), go = () => rapprocher(id, q ? q.value : "");
+  const bq = document.getElementById("rappro-chercher"); if (bq) bq.addEventListener("click", go);
+  if (q) { q.addEventListener("keydown", ev => { if (ev.key === "Enter") go(); }); if (recherche) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }
+  pop.querySelectorAll("[data-choix]").forEach(b => b.addEventListener("click", async () => {
+    fermerPop();
+    await maj(id, { Cle_carif: b.dataset.choix || null });
   }));
 }
 
@@ -670,7 +781,7 @@ function voirFiche(id) {
 const COLS_EXPORT = { "CLE MINISTERES EDUCATIFS": "Cle_ME", "Catalogue Général National": "Statut_catalogue", "Libelle_formation": "Libelle_formation",
   "Gestionnaire_RS": "Gestionnaire_RS", "Siret_gestionnaire": "Siret_gestionnaire", "Formateur_RS": "Formateur_RS", "Siret_formateur": "Siret_formateur",
   "UAI validée référentiel": "UAI_validee", "Code_RNCP": "Code_RNCP", "Code_scolarite": "Code_scolarite", "Annee_de_rentree": "Annee_de_rentree",
-  "Adresse_de_formation": "Adresse_de_formation", "CP": "CP", "Ville": "Ville", "Ref_formation_Carif": "Ref_formation_Carif", "Date_MAJ": "Date_MAJ", "Etat_diplome": "Etat_diplome" };
+  "Adresse_de_formation": "Adresse_de_formation", "CP": "CP", "Ville": "Ville", "Ref_formation_Carif": "Ref_formation_Carif", "Date_MAJ": "Date_MAJ", "Etat_diplome": "Etat_diplome", "Diplome": "Diplome" };
 
 function texteCellule(v) {
   if (v === null || v === undefined) return "";
@@ -752,7 +863,8 @@ async function importerExport(fichier, silencieux) {
     const brut = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null, raw: true });
     const rows = preparerExport(brut);
     if (!rows.length) { if (silencieux) return false; info("Aucune formation de l'académie de " + ACADEMIE + " dans ce fichier : est-ce bien l'export Apprentissage ?"); return false; }
-    if (DEMO) { CATALOGUE = rows; INDEX = null; rendre(); return true; }
+    RAPPRO_FAIT = false;
+    if (DEMO) { CATALOGUE = rows; INDEX = null; await rapprocherAuto(); rendre(); return true; }
     info(`Import de ${rows.length} formations…`);
     const ids = CATALOGUE.map(c => c.id);
     const acts = [];
@@ -779,13 +891,13 @@ async function charger() {
     const [s, f, c, p] = await Promise.all(["Suivi", "Fiches", "Catalogue", "Parametres"].map(t => grist.docApi.fetchTable(t).catch(() => null)));
     if (!s) throw new Error("table « Suivi » introuvable ou accès refusé");
     const manquantes = [["Contact_nom", "Contact (nom)"], ["Contact_tel", "Contact (téléphone)"], ["Contact_email", "Contact (mail)"],
-      ["Motif_UAI", "Correction UAI demandée"], ["Motif_RNCP", "Correction RNCP demandée"]]
+      ["Motif_UAI", "Correction UAI demandée"], ["Motif_RNCP", "Correction RNCP demandée"], ["Cle_carif", "Formation de l'export (clé)"]]
       .filter(([c]) => !(c in s));
     if (manquantes.length) {
       await grist.docApi.applyUserActions(manquantes.map(([c, l]) => ["AddColumn", "Suivi", c, { type: "Text", label: l, isFormula: false }]));
       for (const [c] of manquantes) s[c] = s.id.map(() => null);
     }
-    const manquantesC = c ? ["Etat_diplome", "Debuts_sessions"].filter(k => !(k in c)) : [];
+    const manquantesC = c ? ["Etat_diplome", "Debuts_sessions", "Diplome"].filter(k => !(k in c)) : [];
     if (manquantesC.length) {
       await grist.docApi.applyUserActions(manquantesC.map(k => ["AddColumn", "Catalogue", k, { type: "Text", label: k, isFormula: false }]));
       for (const k of manquantesC) c[k] = c.id.map(() => null);
@@ -797,6 +909,7 @@ async function charger() {
       Vérifiez que le widget a l'« Accès complet au document » (panneau de droite, onglet « Personnalisée »).</div>`;
     return;
   }
+  try { if (await rapprocherAuto()) return charger(); } catch (e) { /* rapprochement automatique non bloquant */ }
   rendre();
 }
 
