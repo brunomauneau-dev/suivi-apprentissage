@@ -327,9 +327,11 @@ function rendre() {
   if (st) {
     const cleDate = d => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(d || ""); return m ? m[3] + m[2] + m[1] : ""; };
     const dates = CATALOGUE.map(c => c.Date_MAJ).filter(d => cleDate(d)).sort((x, y) => cleDate(x).localeCompare(cleDate(y)));
-    st.textContent = CATALOGUE.length
-      ? `Export Carif-Oref importé : ${CATALOGUE.length} formations${dates.length ? " (données du " + dates[dates.length - 1] + ")" : ""}`
-      : "Aucun export Carif-Oref importé : cliquez sur « Importer l'export Carif-Oref »";
+    const der = dates.length ? dates[dates.length - 1] : "";
+    const age = der ? Math.floor((aujourdhui() - Date.UTC(+der.slice(6), +der.slice(3, 5) - 1, +der.slice(0, 2)) / 1000) / JOUR) : null;
+    st.innerHTML = CATALOGUE.length
+      ? `Export Carif-Oref : ${CATALOGUE.length.toLocaleString("fr-FR")} formations${der ? ` · données du ${der} · <span class="${age > 7 ? "vieux" : ""}">${age === 0 ? "aujourd'hui" : age === 1 ? "il y a 1 jour" : "il y a " + age + " jours"}</span>` : ""}`
+      : "Aucun export Carif-Oref importé";
   }
   const kpis = document.getElementById("kpis");
   const attentes = enAttente(groupes);
@@ -356,7 +358,7 @@ function rendre() {
   const ong = document.getElementById("onglets");
   if (ong) {
     ong.innerHTML = `<button class="onglet${onglet === "demandes" ? " on" : ""}" data-onglet="demandes">Nouvelles demandes <span>${nDem}</span>${badges(false)}</button>
-      <button class="onglet${onglet === "ouvertes" ? " on" : ""}" data-onglet="ouvertes">Formations ouvertes en ${cible - 1} — revérification ${cible} <span>${nOuv}</span>${badges(true)}</button>
+      <button class="onglet${onglet === "ouvertes" ? " on" : ""}" data-onglet="ouvertes" title="Formations ouvertes en ${cible - 1}, revérifiées pour la rentrée ${cible}">Formations déjà ouvertes <span>${nOuv}</span>${badges(true)}</button>
       <button class="onglet${onglet === "controle" ? " on" : ""}" data-onglet="controle">Contrôle d'affichage${(() => { const n = aControler(); return n ? `<em class="b-warn">${n} à contrôler</em>` : ""; })()}</button>`;
     ong.querySelectorAll("[data-onglet]").forEach(b => b.addEventListener("click", () => {
       onglet = b.dataset.onglet; filtre = "tous";
@@ -391,14 +393,11 @@ function rendre() {
       const ok = c("parcoursup"), np = c("nonpub"), ar = c("saio");
       const tags = [ar ? `<span class="tag warn">${ar} à retrouver</span>` : "", np ? `<span class="tag wait">${np} non publiable${pl(np)}</span>` : "",
         ok ? `<span class="tag ok">${ok} publiable${pl(ok)}</span>` : ""].join("");
-      const seg = (k, col) => k ? `<i style="width:${100 * k / tot}%;background:${col}"></i>` : "";
       const ouvert = ouverts.has(g.cle) || !!q;
       return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
-        <div class="etab-head"><span class="chev">▶</span>
-          <div class="etab-name"><b>${esc(g.nom)}</b> <button class="btn-lien" data-renom-etab="${esc(g.nom)}" title="Renommer l'établissement">✎ renommer</button><span>${tot} formation${pl(tot)} ouverte${pl(tot)} en ${cible - 1}</span></div>
-          <div><div class="progress">${seg(ok, "var(--green)")}${seg(np, "#b9bec8")}${seg(ar, "#f5a000")}</div>
-            <div class="progress-label">${ok} / ${tot} publiable${pl(ok)} pour ${cible}</div></div>
-          <div class="tags">${tags}</div></div>
+        <div class="etab-head ligne"><span class="chev">▶</span>
+          <div class="etab-name"><b>${esc(g.nom)}</b><span class="meta">${tot} formation${pl(tot)}</span></div>
+          <div class="tags">${tags}</div><button class="menu-etab" data-menu-etab="${esc(g.nom)}" title="Renommer, contact…">⋯</button></div>
         <div class="forms"><table class="liste-ouvertes">
           <tr><th>Formation</th><th>Retrouvée dans l'export</th><th>Diplôme</th><th>Session rentrée ${cible}</th><th>Statut</th></tr>
           ${fs.map(f => ligneOuverte(g, f)).join("")}</table></div>
@@ -418,10 +417,9 @@ function rendre() {
       const aEnvoyer = toutesG.filter(f => !f.r.Lien_envoye && !f.fiche && f.cat_ !== "publie").length;
       const aRenvoyer = toutesG.filter(f => !f.fiche && f.cat_ !== "publie").length;
       return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
-        <div class="etab-head"><span class="chev">▶</span>
-          <div class="etab-name"><b>${esc(g.nom)}</b> <button class="btn-lien" data-renom-etab="${esc(g.nom)}" title="Renommer l'établissement">✎ renommer</button><span>${tot} formation${pl(tot)}</span>
-            <span class="contact">${contactHtml(contactDe(g.nom))} <button class="btn-lien" data-contact="${esc(g.nom)}">✎ contact</button></span></div>
-          <div class="tags">${tags}</div></div>
+        <div class="etab-head ligne"><span class="chev">▶</span>
+          <div class="etab-name"><b>${esc(g.nom)}</b><span class="meta">${tot} formation${pl(tot)}</span><span class="contact">${contactHtml(contactDe(g.nom), "")}</span></div>
+          <div class="tags">${tags}</div><button class="menu-etab" data-menu-etab="${esc(g.nom)}" data-demandes="1" title="Renommer, contact, ajouter une formation…">⋯</button></div>
         <div class="forms"><table class="liste-demandes suivi-etapes">
           <tr><th>Formation</th>${ETAPES.map(et => `<th class="e">${esc(et.nom === "Catalogue national" ? "Catalogue" : et.nom)}</th>`).join("")}<th>Prochaine action</th></tr>
           ${fs.map(ligneFormation).join("")}</table>
@@ -465,17 +463,14 @@ function motifsCourts(m) {
 function panneaux(groupes, attentes) {
   const pan = document.getElementById("panneaux");
   if (!pan) return;
-  pan.style.display = onglet === "controle" ? "none" : "";
-  if (onglet === "controle") return;
+  pan.style.display = onglet === "demandes" ? "" : "none";
+  if (onglet !== "demandes") return;
   const act = attentes;
   const MAX = 6, vus = RELANCES_TOUTES ? act : act.slice(0, MAX);
   const ligneRelance = e => {
     const types = new Map();
     e.lignes.forEach(f => types.set(f.motif, (types.get(f.motif) || 0) + 1));
-    const c = contactDe(e.nom);
-    const contact = [c.nom ? esc(c.nom) : "", c.tel ? `<a href="tel:${esc(c.tel.replace(/\s/g, ""))}">${esc(c.tel)}</a>` : "", c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ""].filter(Boolean);
-    return `<tr><td><b>${esc(e.nom)}</b><small>${e.lignes.length} formation${e.lignes.length > 1 ? "s" : ""}</small></td>
-      <td class="contact-cell">${contact.length ? contact.join("<br>") : `<button class="btn-lien gris" data-contact="${esc(e.nom)}">+ ajouter un contact</button>`}</td>
+    return `<tr><td style="width:28%"><b>${esc(e.nom)}</b><small>${e.lignes.length} formation${e.lignes.length > 1 ? "s" : ""}</small></td>
       <td>${[...types].map(([k, v]) => `<span class="motif">${esc(k)}${e.lignes.length > 1 ? ` <b>${v}</b>` : ""}</span>`).join(" ")}</td>
       <td class="depuis">${e.depuis ? `depuis ${e.depuis} j` : "depuis aujourd'hui"}</td>
       <td class="actions"><button class="btn-lien" data-voir-etab="${esc(e.nom)}">détail</button></td></tr>`;
@@ -499,26 +494,22 @@ function panneaux(groupes, attentes) {
     ${np.length ? `<table class="tab-panneau">${[...parMotif].sort((a, b) => b[1] - a[1]).map(([k, v]) =>
       `<tr><td><b>${esc(/^dates de session/.test(k) ? "Pas de session à la rentrée " + rentreeCible() : k.charAt(0).toUpperCase() + k.slice(1))}</b></td><td class="nb gris">${v}</td></tr>`).join("")}</table>
       <button class="btn petit gris" data-voir-filtre="nonpub">Afficher ces formations</button>` : ""}</section>`;
-  pan.innerHTML = onglet === "ouvertes" ? gaucheOuvertes + `
-    <section class="panneau"><h2>À faire au SAIO <span class="compte ${taches.length ? "warn" : "ok"}">${taches.length}</span></h2>
-      ${taches.length ? `<p>${taches.length} formation${taches.length > 1 ? "s" : ""} à retrouver dans l'export Carif-Oref (une seule fois par formation).</p>
-        <button class="btn petit" data-voir-filtre="saio">Afficher ces formations</button>` : `<p class="rien">Toutes les formations sont retrouvées dans l'export.</p>`}
-    </section>` : `
-    <section class="panneau"><h2>En attente des établissements <span class="compte">${act.length}</span></h2>
-      ${act.length ? `<table class="tab-panneau attente">${vus.map(ligneRelance).join("")}</table>
-        ${act.length > MAX ? `<button class="btn-lien" id="relances-toutes">${RELANCES_TOUTES ? "Réduire" : `Afficher les ${act.length - MAX} autres établissements`}</button>` : ""}`
-        : `<p class="rien">Aucun établissement n'a d'action en attente.</p>`}
-    </section>
-    <section class="panneau"><h2>À faire au SAIO <span class="compte ${taches.length ? "warn" : "ok"}">${taches.length}</span></h2>
-      ${taches.length ? `<table class="tab-panneau">${ordreAct.map(([k, ts]) => {
+  // onglet « Nouvelles demandes » seulement ; « rien à faire » se réduit à une ligne
+  const secAttente = act.length ? `<section class="panneau"><h2>En attente des établissements <span class="compte">${act.length}</span></h2>
+      <table class="tab-panneau attente">${vus.map(ligneRelance).join("")}</table>
+      ${act.length > MAX ? `<button class="btn-lien" id="relances-toutes">${RELANCES_TOUTES ? "Réduire" : `Afficher les ${act.length - MAX} autres établissements`}</button>` : ""}
+    </section>` : "";
+  const secSaio = taches.length ? `<section class="panneau"><h2>À faire au SAIO <span class="compte warn">${taches.length}</span></h2>
+      <table class="tab-panneau">${ordreAct.map(([k, ts]) => {
         const etabs = [...new Set(ts.map(t => t.etab))];
         return `<tr><td><b>${esc(k)}</b><small>${esc(etabs.slice(0, 4).join(", "))}${etabs.length > 4 ? ` et ${etabs.length - 4} autre${etabs.length > 5 ? "s" : ""}` : ""}</small></td>
           <td class="nb">${ts.length}</td>
           <td class="actions">${ts.length === 1 && ts[0].f.fiche ? `<button class="btn petit" data-fiche="${ts[0].f.r.id}">Voir la fiche</button>`
             : ts.length === 1 && ts[0].f.rappro ? `<button class="btn petit" data-rappro="${ts[0].f.r.id}">Retrouver</button>`
             : `<button class="btn petit gris" data-voir-saio="${esc(k)}">Afficher</button>`}</td></tr>`;
-      }).join("")}</table>` : `<p class="rien">Rien à faire pour le moment.</p>`}
-    </section>`;
+      }).join("")}</table></section>` : "";
+  pan.classList.toggle("simple", !secAttente || !secSaio);
+  pan.innerHTML = (secSaio ? "" : `<div class="ok-ligne">✓ Rien à faire au SAIO pour le moment.</div>`) + secAttente + secSaio;
   const tout = document.getElementById("relances-toutes");
   if (tout) tout.addEventListener("click", () => { RELANCES_TOUTES = !RELANCES_TOUTES; rendre(); });
   pan.querySelectorAll("[data-relance]").forEach(b => b.addEventListener("click", async () => {
@@ -606,6 +597,27 @@ function ligneOuverte(g, f) {
     <td class="statut">${pastille(f)}<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "✎ commentaire" : "+ commentaire"}</button></td></tr>`;
 }
 
+async function renommerEtab(ancien) {
+  const nouveau = (prompt("Nouveau nom de l'établissement :", ancien) || "").trim();
+  if (!nouveau || nouveau === ancien) return;
+  const ids = ROWS.filter(r => norm(r.Etablissement) === norm(ancien)).map(r => r.id);
+  if (ouverts.has(norm(ancien))) ouverts.add(norm(nouveau));
+  await bulkMaj(ids, { Etablissement: nouveau });
+}
+
+// Petit menu « ⋯ » d'un établissement
+function menuEtab(etab, ancre, demandes) {
+  const pop = nouvellePop("pop-menu");
+  pop.innerHTML = `<button class="item" id="m-renom">✎ Renommer l'établissement</button>
+    <button class="item" id="m-contact">👤 ${contactDe(etab).nom || contactDe(etab).email ? "Modifier" : "Ajouter"} le contact</button>
+    ${demandes ? `<button class="item" id="m-ajout">+ Ajouter une formation</button>` : ""}`;
+  placer(pop, ancre);
+  const on = (id, f) => { const b = document.getElementById(id); if (b) b.addEventListener("click", ev => { ev.stopPropagation(); f(); }); };
+  on("m-renom", () => { fermerPop(); renommerEtab(etab); });
+  on("m-contact", () => editerContact(etab, ancre));
+  on("m-ajout", () => ouvrirAjout(etab));
+}
+
 function brancher(zone) {
   zone.querySelectorAll(".etab-head").forEach(h => h.addEventListener("click", () => {
     const s = h.parentElement; s.classList.toggle("open");
@@ -627,15 +639,8 @@ function brancher(zone) {
   zone.querySelectorAll("[data-commentaire]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); editerCommentaire(b.dataset.commentaire, b); }));
   zone.querySelectorAll("[data-contact]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); editerContact(b.dataset.contact, b); }));
   zone.querySelectorAll(".contact a").forEach(a => a.addEventListener("click", ev => ev.stopPropagation()));
-  zone.querySelectorAll("[data-renom-etab]").forEach(b => b.addEventListener("click", async ev => {
-    ev.stopPropagation();
-    const ancien = b.dataset.renomEtab;
-    const nouveau = (prompt("Nouveau nom de l'établissement :", ancien) || "").trim();
-    if (!nouveau || nouveau === ancien) return;
-    const ids = ROWS.filter(r => norm(r.Etablissement) === norm(ancien)).map(r => r.id);
-    if (ouverts.has(norm(ancien))) ouverts.add(norm(nouveau));
-    await bulkMaj(ids, { Etablissement: nouveau });
-  }));
+  zone.querySelectorAll("[data-renom-etab]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); renommerEtab(b.dataset.renomEtab); }));
+  zone.querySelectorAll("[data-menu-etab]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); menuEtab(b.dataset.menuEtab, b, !!b.dataset.demandes); }));
   zone.querySelectorAll("[data-renom]").forEach(b => b.addEventListener("click", async ev => {
     ev.stopPropagation();
     const id = Number(b.dataset.renom), r = ROWS.find(x => x.id === id);
