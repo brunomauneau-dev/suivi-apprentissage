@@ -44,9 +44,13 @@ function enteteNote(n) {
 // Sous le nom de la formation : la dernière note sur une ligne, cliquable (ouvre toutes les notes)
 // Petit pictogramme « bulle » dessiné (l'émoji s'affiche mal sous Windows)
 const ICONE_NOTE = `<svg class="ico-note" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M2.5 2.5h11a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H7l-3.2 2.6V11H2.5a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+// Sans note : un lien « + note » sur la ligne du nom, visible au survol (ne prend pas de hauteur)
+function lienAjoutNote(r) {
+  return notesDe(r.id).length ? "" : `<button class="ajout-note" data-com="${r.id}">${ICONE_NOTE} + note</button>`;
+}
 function resumeNotes(r) {
   const ns = notesDe(r.id);
-  if (!ns.length) return `<div class="notes-f"><button class="ajout-note" data-com="${r.id}">${ICONE_NOTE} + note</button></div>`;
+  if (!ns.length) return "";
   const n = ns[0], t = String(n.Texte || "").replace(/\s+/g, " ");
   const d = n.Reprise || !n.Date ? "ancien" : new Date(n.Date * 1000).toLocaleDateString("fr-FR", { timeZone: "UTC", day: "2-digit", month: "2-digit" });
   return `<div class="notes-f"><button class="bulle-note" data-com="${r.id}" title="${esc(enteteNote(n) + " : " + (n.Texte || ""))}">

@@ -452,7 +452,7 @@ function panneaux(groupes, attentes) {
   const ligneAttente = e => {
     const types = new Map();
     e.lignes.forEach(f => types.set(f.motif, (types.get(f.motif) || 0) + 1));
-    return `<tr><td style="width:28%"><b>${esc(e.nom)}</b><small>${e.lignes.length} formation${e.lignes.length > 1 ? "s" : ""}</small></td>
+    return `<tr><td><b>${esc(e.nom)}</b><small>${e.lignes.length} formation${e.lignes.length > 1 ? "s" : ""}</small></td>
       <td>${[...types].map(([k, v]) => `<span class="motif">${esc(k)}${e.lignes.length > 1 ? ` <b>${v}</b>` : ""}</span>`).join(" ")}</td>
       <td class="depuis">${e.depuis ? `depuis ${e.depuis} j` : "depuis aujourd'hui"}</td>
       <td class="actions"><button class="btn-lien" data-voir-etab="${esc(e.nom)}">détail</button></td></tr>`;
@@ -527,7 +527,7 @@ function ligneFormation(f) {
   const boutons = [f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
     f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : ""].join(" ");
   return `<tr class="ligne-f" data-id="${r.id}">
-    <td class="f-nom"><div class="f-tete"><b>${esc(r.Formation || "(sans intitulé)")}</b>${boutonMenuF(r, true)}</div>${sous.length ? `<small>${sous.join(" · ")}</small>` : ""}${resumeNotes(r)}</td>
+    <td class="f-nom"><div class="f-tete"><b>${esc(r.Formation || "(sans intitulé)")}</b>${boutonMenuF(r, true)}${lienAjoutNote(r)}</div>${sous.length ? `<small>${sous.join(" · ")}</small>` : ""}${resumeNotes(r)}</td>
     ${cases}
     <td class="action ${couleur}"><b>${esc(titre)}</b><span>${esc(f.next.txt)}</span>${boutons.trim() ? `<div>${boutons}</div>` : ""}</td></tr>`;
 }
@@ -549,7 +549,7 @@ function ligneOuverte(g, f) {
     ses = rok === false ? `${ko} ${d.length ? "dernière : " + d[d.length - 1].txt : "aucune pour " + rentreeCible()}` : rok ? `${ok} ${bonne ? bonne.txt : rentreeCible()}` : "?";
   }
   return `<tr class="ligne-o">
-    <td class="f-nom"><div class="f-tete"><b>${esc(r.Formation || "")}</b>${boutonMenuF(r, false)}</div>${sous.length ? `<small>${sous.join(" · ")}</small>` : ""}${resumeNotes(r)}</td>
+    <td class="f-nom"><div class="f-tete"><b>${esc(r.Formation || "")}</b>${boutonMenuF(r, false)}${lienAjoutNote(r)}</div>${sous.length ? `<small>${sous.join(" · ")}</small>` : ""}${resumeNotes(r)}</td>
     <td class="export">${export_}</td><td class="ck">${dip}</td><td class="ck">${ses}</td>
     <td class="statut">${pastille(f)}</td></tr>`;
 }
