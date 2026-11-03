@@ -1046,22 +1046,17 @@ function urlExport() { return String(PARAM.URL_export || URL_EXPORT).replace(/\/
 
 // Bouton « Importer l'export » : on tente de récupérer le fichier directement sur la page CAP Métiers ;
 // si le navigateur ou le réseau le bloque, on propose d'ouvrir la page puis de choisir le fichier téléchargé.
-async function importerDepuisCapMetiers() {
+// Le navigateur ne peut pas lire directement la page CAP Métiers : on l'ouvre dans un nouvel onglet,
+// l'utilisateur y télécharge le dernier export puis le choisit (ou le glisse) dans l'outil.
+function importerDepuisCapMetiers() {
+  window.open(urlExport(), "_blank", "noopener");
   const ban = document.getElementById("bandeaux");
-  if (ban) ban.innerHTML = `<div class="banner">Récupération de l'export sur la page CAP Métiers…</div>`;
-  let donnees = null;
-  try {
-    const ctl = new AbortController(), minuterie = setTimeout(() => ctl.abort(), 30000);
-    const rep = await fetch(urlExport() + "/download", { signal: ctl.signal });
-    clearTimeout(minuterie);
-    if (rep.ok) donnees = await rep.arrayBuffer();
-  } catch (e) { donnees = null; }
-  if (donnees && await importerExport(donnees, true)) return;
-  if (ban) ban.innerHTML = `<div class="banner">Récupération automatique impossible depuis ce poste.
-    <a href="${esc(urlExport())}" target="_blank" rel="noopener">① Ouvrir la page CAP Métiers</a> et télécharger l'export, puis
-    <button class="btn petit" id="choisir-export">② Choisir le fichier téléchargé</button></div>`;
-  const b = document.getElementById("choisir-export"), fic = document.getElementById("fichier-export");
+  if (ban) ban.innerHTML = `<div class="banner import-guide">La page CAP Métiers s'est ouverte dans un nouvel onglet : téléchargez le dernier export,
+    puis <button class="btn petit" id="choisir-export">Choisir le fichier téléchargé</button> ou glissez-le sur cette page.
+    <button class="btn-lien gris" id="annuler-import">annuler</button></div>`;
+  const b = document.getElementById("choisir-export"), fic = document.getElementById("fichier-export"), an = document.getElementById("annuler-import");
   if (b && fic) b.addEventListener("click", ev => { ev.stopPropagation(); fic.click(); });
+  if (an) an.addEventListener("click", ev => { ev.stopPropagation(); if (ban) ban.innerHTML = ""; rendre(); });
 }
 
 // fichier : File (choisi à la main) ou ArrayBuffer (téléchargé). silencieux : renvoie false sans message si ce n'est pas un export lisible.
@@ -1170,6 +1165,16 @@ if (typeof window !== "undefined") {
       imp.addEventListener("click", ev => { ev.stopPropagation(); importerDepuisCapMetiers(); });
       fic.addEventListener("change", () => { if (fic.files && fic.files[0]) importerExport(fic.files[0]); fic.value = ""; });
     }
+    // glisser-déposer l'export n'importe où sur la page
+    document.addEventListener("dragover", ev => { if (ev.dataTransfer && [...ev.dataTransfer.types].includes("Files")) { ev.preventDefault(); document.body.classList.add("depot"); } });
+    document.addEventListener("dragleave", ev => { if (!ev.relatedTarget) document.body.classList.remove("depot"); });
+    document.addEventListener("drop", ev => {
+      document.body.classList.remove("depot");
+      const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+      if (!f) return;
+      ev.preventDefault();
+      if (/\.(xlsb|xlsx|xls|csv)$/i.test(f.name)) importerExport(f);
+    });
     document.addEventListener("click", () => fermerPop());
     document.addEventListener("keydown", ev => { if (ev.key === "Escape") fermerPop(); });
 
