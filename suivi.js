@@ -748,6 +748,19 @@ function rapprocher(id, recherche) {
       const vus = new Set(parFiche.map(x => x.c.Cle_ME));
       liste = [...parFiche, ...liste.filter(x => !vus.has(x.c.Cle_ME))];
     }
+    // formations de l'export du même UAI / organisme que les autres formations déjà rapprochées de cet établissement
+    const voisins = ROWS.filter(x => x.id !== r.id && norm(x.Etablissement) === norm(r.Etablissement)).map(catalogueLie).filter(Boolean);
+    if (voisins.length) {
+      const pris = new Set(voisins.map(c => c.Cle_ME));
+      const uais = new Set(voisins.map(c => c._uai).filter(Boolean)), orgs = new Set(voisins.map(c => norm(c.Formateur_RS)).filter(Boolean));
+      const intitule = jetons(String(r.Formation || "").replace(/\(([^)]*)\)\s*(- en apprentissage)?\s*$/i, ""));
+      // précision de site : lieu, ou parenthèse finale de l'intitulé (« … (AFTRAL Périgueux) »)
+      const lieu = jetons(r.Lieu || "", (String(r.Formation || "").match(/\(([^)]*)\)\s*(- en apprentissage)?\s*$/i) || [])[1] || "");
+      const parVoisins = CATALOGUE.filter(c => !pris.has(c.Cle_ME) && (uais.has(c._uai) || orgs.has(norm(c.Formateur_RS))))
+        .map(c => ({ c, score: 8 + part(intitule, c._tform) + (lieu.size ? part(lieu, c._tlieu) : 0) })).sort((a, b) => b.score - a.score);
+      const vus = new Set(parVoisins.map(x => x.c.Cle_ME));
+      liste = [...parVoisins, ...liste.filter(x => !vus.has(x.c.Cle_ME))];
+    }
     liste = liste.slice(0, 8);
   }
   const ligne = c => {
