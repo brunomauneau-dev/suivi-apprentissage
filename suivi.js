@@ -306,7 +306,7 @@ let onglet = "demandes";
 try { const o = localStorage.getItem("suivi-onglet"); onglet = ["ouvertes", "controle"].includes(o) ? o : "demandes"; } catch (e) { /* stockage indisponible */ }
 const PASTILLE = { relance: ["ko", "À relancer"], saio: ["warn", "À faire SAIO"], attente: ["wait", "En attente"], publie: ["ok", "Publiée"], parcoursup: ["ok", "Publiable"], nonpub: ["wait", "Non publiable"] };
 const CHIPS = {
-  demandes: [["tous", "Tous"], ["saio", "À faire au SAIO"], ["attente", "En attente de l'établissement"], ["publie", "Publiées"], ["relance", "À relancer"]],
+  demandes: [["tous", "Tous"], ["saio", "À faire au SAIO"], ["attente", "En attente de l'établissement"], ["publie", "Publiées"]],
   ouvertes: [["tous", "Tous"], ["parcoursup", "Publiables"], ["nonpub", "Non publiables"], ["saio", "À retrouver dans l'export"]],
   controle: [["afaire", "À contrôler"], ["ko", "Non conformes"], ["surv", "À surveiller"], ["ok", "Conformes"], ["tous", "Tous"]],
 };
@@ -365,9 +365,17 @@ function rendre() {
     }));
   }
   const chips = document.getElementById("chips");
-  if (chips) chips.innerHTML = filtre !== "tous"
-    ? `<span class="filtre-actif">Filtre : ${esc((CHIPS[onglet].find(([k]) => k === filtre) || [, filtre])[1])} <button class="btn-lien" id="sans-filtre">✕ tout afficher</button></span>` : "";
-  const sf = document.getElementById("sans-filtre"); if (sf) sf.addEventListener("click", () => { filtre = "tous"; rendre(); });
+  // filtres utiles selon l'onglet ; l'onglet « Contrôle d'affichage » n'en a pas (les chiffres clés suffisent)
+  if (chips) {
+    if (onglet === "controle") {
+      chips.innerHTML = filtre !== "tous"
+        ? `<span class="filtre-actif">Filtre : ${esc((CHIPS.controle.find(([k]) => k === filtre) || [, filtre])[1])} <button class="btn-lien" id="sans-filtre">✕ tout afficher</button></span>` : "";
+      const sf = document.getElementById("sans-filtre"); if (sf) sf.addEventListener("click", () => { filtre = "tous"; rendre(); });
+    } else {
+      chips.innerHTML = CHIPS[onglet].map(([k, l]) => `<button class="chip${filtre === k ? " on" : ""}" data-f="${k}">${l}</button>`).join("");
+      chips.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => { filtre = c.dataset.f; rendre(); }));
+    }
+  }
   const q = norm(recherche);
   const garde = (g, f) => (filtre === "tous" || f.cat_ === filtre) && (!q || norm(g.nom).includes(q) || norm(f.r.Formation).includes(q) || norm(f.r.Lieu).includes(q));
   let html;
