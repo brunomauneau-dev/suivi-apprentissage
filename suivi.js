@@ -962,6 +962,7 @@ function voirFiche(id) {
     ["Certifié Qualiopi (avec n°)", (fi.Certification || []).includes("Qualiopi") && !!fi.Num_Qualiopi],
     ["Référencée Carif-Oref (déclaré)", fi.Referencee_Carif_Oref === "Oui"],
     ["Attestation cochée", !!fi.Attestation],
+    ...("Fonction_signataire" in fi ? [["Signée par le chef d'établissement", /chef/i.test(String(fi.Fonction_signataire || ""))]] : []),
   ];
   const comp = c ? [
     ["SIRET", fi.Siret, c.Siret_formateur + (c._sg !== c._sf ? " / gest. " + c.Siret_gestionnaire : ""), [c._sf, c._sg].includes(chiffres(fi.Siret).padStart(14, "0"))],
@@ -983,7 +984,7 @@ function voirFiche(id) {
         ${champ("Statut", fi.Statut)}${champ("Places (mixité)", fi.Places_mixite)}${champ("Durée", fi.Duree)}${champ("Précision durée", fi.Duree_precision)}
         ${champ("Code diplôme", fi.Code_diplome)}${champ("Code RNCP", fi.Code_RNCP)}</div>
       <div><h3>Lieu et UAI</h3>${champ("UAI lieu", fi.UAI_lieu)}${champ("UAI formateur", fi.UAI_formateur)}${champ("UAI gestionnaire", fi.UAI_gestionnaire)}
-        ${champ("Adresse", fi.Lieu_adresse)}${champ("Commune", fi.Commune)}${champ("Code postal", fi.Code_postal)}${champ("Signataire", fi.Signataire)}</div>
+        ${champ("Adresse", fi.Lieu_adresse)}${champ("Commune", fi.Commune)}${champ("Code postal", fi.Code_postal)}${champ("Signataire", fi.Signataire)}${"Fonction_signataire" in fi ? champ("Fonction", fi.Fonction_signataire) : ""}</div>
     </div>
     <h3>Contrôles automatiques</h3><ul class="controles">${controles.map(([l, b]) => `<li>${ok(b)} ${esc(l)}</li>`).join("")}</ul>
     <h3>Comparaison avec l'export Carif-Oref</h3>
