@@ -3,8 +3,6 @@
 // 7 étapes : mail reçu → lien envoyé → fiche reçue → UAI → RNCP → Carif-Oref (auto, export) → catalogue national (manuel).
 
 const JOUR = 86400;
-const DELAI_FICHE = 10;    // jours après l'envoi du lien avant de relancer pour la fiche
-const DELAI_RELANCE = 7;   // une relance masque l'établissement pendant ce nombre de jours
 const ACADEMIE = "Bordeaux";
 // Campagne Parcoursup en cours : de septembre N à août N+1 on prépare la rentrée N+1
 function rentreeCible() { const d = new Date(); return d.getMonth() >= 8 ? d.getFullYear() + 1 : d.getFullYear(); }
@@ -257,10 +255,6 @@ function analyser(r, maintenant) {
   return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Publier au catalogue national" } };
 }
 
-function motifRelance(f) {
-  return f.cat_ === "relance" ? f.next.txt : null;
-}
-
 function construire(rows, maintenant = aujourdhui()) {
   const groupes = new Map();
   for (const r of rows) {
@@ -268,7 +262,7 @@ function construire(rows, maintenant = aujourdhui()) {
     if (!groupes.has(k)) groupes.set(k, { cle: k, nom, formations: [] });
     groupes.get(k).formations.push({ r, ...analyser(r, maintenant) });
   }
-  const ordre = { relance: 0, saio: 1, attente: 2, nonpub: 3, publie: 4, parcoursup: 4 };
+  const ordre = { saio: 0, attente: 1, nonpub: 2, publie: 3, parcoursup: 3 };
   const gs = [...groupes.values()];
   for (const g of gs) g.formations.sort((a, b) => ordre[a.cat_] - ordre[b.cat_] || String(a.r.Formation).localeCompare(String(b.r.Formation)));
   const actif = g => g.formations.some(f => f.cat_ !== "parcoursup");
@@ -304,7 +298,7 @@ function tuile(f, cls, nb, lib) {
 }
 let onglet = "demandes";
 try { const o = localStorage.getItem("suivi-onglet"); onglet = ["ouvertes", "controle"].includes(o) ? o : "demandes"; } catch (e) { /* stockage indisponible */ }
-const PASTILLE = { relance: ["ko", "À relancer"], saio: ["warn", "À faire SAIO"], attente: ["wait", "En attente"], publie: ["ok", "Publiée"], parcoursup: ["ok", "Publiable"], nonpub: ["wait", "Non publiable"] };
+const PASTILLE = { saio: ["warn", "À faire SAIO"], attente: ["wait", "En attente"], publie: ["ok", "Publiée"], parcoursup: ["ok", "Publiable"], nonpub: ["wait", "Non publiable"] };
 const CHIPS = {
   demandes: [["tous", "Tous"], ["saio", "À faire au SAIO"], ["attente", "En attente de l'établissement"], ["publie", "Publiées"]],
   ouvertes: [["tous", "Tous"], ["parcoursup", "Publiables"], ["nonpub", "Non publiables"], ["saio", "À retrouver dans l'export"]],
@@ -384,7 +378,7 @@ function rendre() {
   if (onglet === "controle") {
     html = htmlControle(q, filtre);
   } else if (onglet === "ouvertes") {
-    const ordre = { saio: 0, attente: 1, nonpub: 2, relance: 2, parcoursup: 3, publie: 3 };
+    const ordre = { saio: 0, attente: 1, nonpub: 2, parcoursup: 3, publie: 3 };
     html = groupes.map(g => {
       const fs = g.formations.filter(f => garde(g, f))
         .sort((a, b) => ordre[a.cat_] - ordre[b.cat_] || String(a.r.Formation).localeCompare(String(b.r.Formation)));
@@ -409,9 +403,9 @@ function rendre() {
       const fs = toutesG.filter(f => garde(g, f));
       if (!fs.length) return "";
       const tot = toutesG.length, c = k => toutesG.filter(f => f.cat_ === k).length;
-      const rel = c("relance"), sai = c("saio"), att = c("attente"), fin = c("publie");
+      const sai = c("saio"), att = c("attente"), fin = c("publie");
       const pl = k => k > 1 ? "s" : "";
-      const tags = [rel ? `<span class="tag ko">${rel} à relancer</span>` : "", sai ? `<span class="tag warn">${sai} à faire SAIO</span>` : "",
+      const tags = [sai ? `<span class="tag warn">${sai} à faire SAIO</span>` : "",
         att ? `<span class="tag wait">${att} en attente</span>` : "", fin ? `<span class="tag ok">${fin} publiée${pl(fin)}</span>` : ""].join("");
       const ouvert = ouverts.has(g.cle) || !!q;
       const aEnvoyer = toutesG.filter(f => !f.r.Lien_envoye && !f.fiche && f.cat_ !== "publie").length;
@@ -446,19 +440,7 @@ function enAttente(groupes) {
   return out.sort((a, b) => b.depuis - a.depuis || a.nom.localeCompare(b.nom));
 }
 
-let RELANCES_TOUTES = false;
-
-// Motif de relance en quelques mots (pour le résumé par établissement)
-function motifsCourts(m) {
-  const k = [];
-  if (/Fiche non reçue/i.test(m)) k.push("fiche non reçue");
-  if (/UAI : à corriger/.test(m)) k.push("UAI à corriger");
-  if (/RNCP : à corriger/.test(m)) k.push("RNCP à corriger");
-  if (/archiv/i.test(m)) k.push("diplôme archivé");
-  if (/pas de session|aucune session/i.test(m)) k.push("dates de session " + rentreeCible());
-  if (/Absente/i.test(m)) k.push("absente de l'export");
-  return k.length ? k : [m.length > 40 ? m.slice(0, 40) + "…" : m];
-}
+let ATTENTES_TOUTES = false;
 
 function panneaux(groupes, attentes) {
   const pan = document.getElementById("panneaux");
@@ -466,8 +448,8 @@ function panneaux(groupes, attentes) {
   pan.style.display = onglet === "demandes" ? "" : "none";
   if (onglet !== "demandes") return;
   const act = attentes;
-  const MAX = 6, vus = RELANCES_TOUTES ? act : act.slice(0, MAX);
-  const ligneRelance = e => {
+  const MAX = 6, vus = ATTENTES_TOUTES ? act : act.slice(0, MAX);
+  const ligneAttente = e => {
     const types = new Map();
     e.lignes.forEach(f => types.set(f.motif, (types.get(f.motif) || 0) + 1));
     return `<tr><td style="width:28%"><b>${esc(e.nom)}</b><small>${e.lignes.length} formation${e.lignes.length > 1 ? "s" : ""}</small></td>
@@ -484,20 +466,10 @@ function panneaux(groupes, attentes) {
     parAction.get(k).push(t);
   }
   const ordreAct = [...parAction].sort((a, b) => b[1].length - a[1].length);
-  // onglet des formations ouvertes : pas de relance, un simple état des lieux de ce qui n'est pas publiable
-  const np = groupes.flatMap(g => g.formations.filter(f => f.cat_ === "nonpub"));
-  const parMotif = new Map();
-  np.forEach(f => motifsCourts(f.next.txt).forEach(k => parMotif.set(k, (parMotif.get(k) || 0) + 1)));
-  const gaucheOuvertes = `<section class="panneau"><h2>Non publiables pour ${rentreeCible()} en l'état <span class="compte">${np.length}</span></h2>
-    <p class="rien">Pour information : une formation qui ne rouvre pas n'a pas à se signaler, il n'y a donc pas de relance à faire.
-      Elle redeviendra publiable d'elle-même si l'établissement met à jour le Carif-Oref.</p>
-    ${np.length ? `<table class="tab-panneau">${[...parMotif].sort((a, b) => b[1] - a[1]).map(([k, v]) =>
-      `<tr><td><b>${esc(/^dates de session/.test(k) ? "Pas de session à la rentrée " + rentreeCible() : k.charAt(0).toUpperCase() + k.slice(1))}</b></td><td class="nb gris">${v}</td></tr>`).join("")}</table>
-      <button class="btn petit gris" data-voir-filtre="nonpub">Afficher ces formations</button>` : ""}</section>`;
   // onglet « Nouvelles demandes » seulement ; « rien à faire » se réduit à une ligne
   const secAttente = act.length ? `<section class="panneau"><h2>En attente des établissements <span class="compte">${act.length}</span></h2>
-      <table class="tab-panneau attente">${vus.map(ligneRelance).join("")}</table>
-      ${act.length > MAX ? `<button class="btn-lien" id="relances-toutes">${RELANCES_TOUTES ? "Réduire" : `Afficher les ${act.length - MAX} autres établissements`}</button>` : ""}
+      <table class="tab-panneau attente">${vus.map(ligneAttente).join("")}</table>
+      ${act.length > MAX ? `<button class="btn-lien" id="attentes-toutes">${ATTENTES_TOUTES ? "Réduire" : `Afficher les ${act.length - MAX} autres établissements`}</button>` : ""}
     </section>` : "";
   const secSaio = taches.length ? `<section class="panneau"><h2>À faire au SAIO <span class="compte warn">${taches.length}</span></h2>
       <table class="tab-panneau">${ordreAct.map(([k, ts]) => {
@@ -510,14 +482,8 @@ function panneaux(groupes, attentes) {
       }).join("")}</table></section>` : "";
   pan.classList.toggle("simple", !secAttente || !secSaio);
   pan.innerHTML = (secSaio ? "" : `<div class="ok-ligne">✓ Rien à faire au SAIO pour le moment.</div>`) + secAttente + secSaio;
-  const tout = document.getElementById("relances-toutes");
-  if (tout) tout.addEventListener("click", () => { RELANCES_TOUTES = !RELANCES_TOUTES; rendre(); });
-  pan.querySelectorAll("[data-relance]").forEach(b => b.addEventListener("click", async () => {
-    const ids = b.dataset.relance.split(",").map(Number), d = aujourdhui();
-    if (DEMO) { ROWS.forEach(r => { if (ids.includes(r.id)) r.Relance_le = d; }); rendre(); return; }
-    await actions([["BulkUpdateRecord", "Suivi", ids, { Relance_le: ids.map(() => d) }]]);
-    await charger();
-  }));
+  const tout = document.getElementById("attentes-toutes");
+  if (tout) tout.addEventListener("click", () => { ATTENTES_TOUTES = !ATTENTES_TOUTES; rendre(); });
   pan.querySelectorAll("[data-fiche]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); voirFiche(Number(b.dataset.fiche)); }));
   pan.querySelectorAll("[data-rappro]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); rapprocher(Number(b.dataset.rappro)); }));
   pan.querySelectorAll("[data-contact]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); editerContact(b.dataset.contact, b); }));
@@ -540,13 +506,6 @@ function pastille(f) {
   return `<span class="pill ${cls}">${txt}</span>`;
 }
 
-function outilsFormation(f) {
-  const r = f.r;
-  return [f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
-    f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : "",
-    `<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "✎ commentaire" : "+ commentaire"}</button>`].join(" ");
-}
-
 // Onglet « Nouvelles demandes » : une ligne par formation, une case par étape (cliquable), puis la prochaine action
 const A_FAIRE = ["à saisir", "à envoyer", "attendue", "à vérifier", "à vérifier", "à vérifier", "à publier"];
 function ligneFormation(f) {
@@ -565,7 +524,7 @@ function ligneFormation(f) {
   if (r.Lien_Parcoursup) sous.push(`<a href="${esc(r.Lien_Parcoursup)}" target="_blank" rel="noopener">fiche Parcoursup</a>`);
   sous.push(`<button class="btn-lien" data-renom="${r.id}">renommer</button>`, `<button class="btn-lien rouge" data-suppr="${r.id}">supprimer</button>`,
     `<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "✎ commentaire" : "+ commentaire"}</button>`);
-  const couleur = { relance: "ko", saio: "warn", attente: "wait", publie: "ok" }[f.cat_] || "wait";
+  const couleur = { saio: "warn", attente: "wait", publie: "ok" }[f.cat_] || "wait";
   const titre = f.cat_ === "saio" ? "À faire au SAIO" : f.next.titre;
   const boutons = [f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
     f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : ""].join(" ");
@@ -636,7 +595,6 @@ function brancher(zone) {
     await actions([["RemoveRecord", "Suivi", id]]); await charger();
   }));
   zone.querySelectorAll("[data-ajout]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); ouvrirAjout(b.dataset.ajout); }));
-  zone.querySelectorAll("[data-commentaire]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); editerCommentaire(b.dataset.commentaire, b); }));
   zone.querySelectorAll("[data-contact]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); editerContact(b.dataset.contact, b); }));
   zone.querySelectorAll(".contact a").forEach(a => a.addEventListener("click", ev => ev.stopPropagation()));
   zone.querySelectorAll("[data-renom-etab]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); renommerEtab(b.dataset.renomEtab); }));
@@ -650,7 +608,6 @@ function brancher(zone) {
   zone.querySelectorAll("[data-mail]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); preparerMail(b.dataset.mail, null, b); }));
   zone.querySelectorAll("[data-fiche]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); voirFiche(Number(b.dataset.fiche)); }));
   zone.querySelectorAll("[data-rappro]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); rapprocher(Number(b.dataset.rappro)); }));
-  zone.querySelectorAll("[data-lien]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); copierLien(b, Number(b.dataset.lien)); }));
 }
 
 // ------------------------------------------------------------------ fenêtres
@@ -838,29 +795,6 @@ function contactDe(etab) {
   }
   return c;
 }
-function commentaireDe(etab) {
-  const k = norm(etab);
-  const r = ROWS.find(x => norm(x.Etablissement) === k && x.Commentaire && !(x.Origine && !x.Mail_recu));
-  return r ? r.Commentaire : "";
-}
-
-function editerCommentaire(etab, ancre) {
-  const pop = nouvellePop("pop-large");
-  pop.innerHTML = `<b>Commentaire sur la demande — ${esc(etab)}</b>
-    <textarea id="com-txt" rows="5">${esc(commentaireDe(etab))}</textarea>
-    <div class="pop-btns"><button class="btn" id="com-ok">Enregistrer</button><button class="btn gris" id="com-annul">Annuler</button></div>`;
-  placer(pop, ancre);
-  const t = document.getElementById("com-txt"); if (t) t.focus();
-  const an = document.getElementById("com-annul"); if (an) an.addEventListener("click", fermerPop);
-  const ok = document.getElementById("com-ok");
-  if (ok) ok.addEventListener("click", async () => {
-    const el = document.getElementById("com-txt"), val = el ? el.value.trim() : "";
-    const ids = ROWS.filter(r => norm(r.Etablissement) === norm(etab) && !(r.Origine && !r.Mail_recu)).map(r => r.id);
-    fermerPop();
-    if (ids.length) await bulkMaj(ids, { Commentaire: val || null });
-  });
-}
-
 function contactHtml(c, vide) {
   const p = [];
   if (c.nom) p.push("👤 " + esc(c.nom));
@@ -949,31 +883,11 @@ async function bulkMaj(ids, champs) {
   await charger();
 }
 
-async function copierLien(bouton, id) {
-  const r = ROWS.find(x => x.id === id);
-  const lien = r && r.Lien_fiche;
-  const pop = nouvellePop();
-  if (!lien) {
-    pop.innerHTML = `<b>Lien pas encore disponible</b><p class="rien">Publiez d'abord le formulaire (page « Formulaire fiche » → Publier),
-      puis collez son adresse dans la page « Paramètres ».</p>`;
-    placer(pop, bouton); return;
-  }
-  let copie = false;
-  try { await navigator.clipboard.writeText(lien); copie = true; } catch (e) { copie = false; }
-  pop.innerHTML = `<b>Lien de la fiche — ${esc(r.Formation)}</b>
-    <p class="rien">${copie ? "✓ Lien copié : collez-le dans votre mail (Ctrl+V)." : "Sélectionnez le lien ci-dessous et copiez-le (Ctrl+C)."}</p>
-    <input id="pop-lien" value="${esc(lien)}" readonly>
-    ${!r.Lien_envoye ? `<div class="pop-btns"><button class="btn" id="pop-envoye">Marquer « lien envoyé » aujourd'hui</button></div>` : ""}`;
-  placer(pop, bouton);
-  const inp = document.getElementById("pop-lien"); if (inp) { inp.focus(); inp.select(); }
-  const env = document.getElementById("pop-envoye");
-  if (env) env.addEventListener("click", async () => { fermerPop(); await maj(id, { Lien_envoye: aujourdhui() }); });
-}
-
 // ------------------------------------------------------------------ consultation de la fiche
 
 function voirFiche(id) {
   const r = ROWS.find(x => x.id === id);
+  if (!r) return;
   const f = construire([r])[0].formations[0];
   const fi = f.fiche, c = f.cat;
   if (!fi) return;
@@ -1132,14 +1046,14 @@ async function importerExport(fichier, silencieux) {
     if (DEMO) { CATALOGUE = rows; INDEX = null; await rapprocherAuto(); rendre(); return true; }
     info(`Import de ${rows.length} formations…`);
     const ids = CATALOGUE.map(c => c.id);
-    const acts = [];
-    if (ids.length) acts.push(["BulkRemoveRecord", "Catalogue", ids]);
-    for (let i = 0; i < rows.length; i += 1000) {
-      const part = rows.slice(i, i + 1000), cols = {};
+    if (ids.length) await actions([["BulkRemoveRecord", "Catalogue", ids]]);
+    // envoi par paquets : un seul envoi de 3 000 lignes peut dépasser la taille admise par le serveur
+    for (let i = 0; i < rows.length; i += 500) {
+      const part = rows.slice(i, i + 500), cols = {};
       for (const k of Object.keys(part[0])) cols[k] = part.map(x => x[k]);
-      acts.push(["BulkAddRecord", "Catalogue", part.map(() => null), cols]);
+      info(`Import de ${rows.length} formations… ${Math.min(i + 500, rows.length)}`);
+      await actions([["BulkAddRecord", "Catalogue", part.map(() => null), cols]]);
     }
-    await actions(acts);
     await charger();
     return true;
   } catch (e) {

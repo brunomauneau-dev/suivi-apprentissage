@@ -3,8 +3,8 @@
 // Utilise les variables et fonctions de suivi.js (ROWS, DEMO, esc, norm, aujourdhui, contactDe, rentreeCible…).
 
 let AFFICHAGE = [], CTRL_SEL = null, CTRL_BROUILLON = null;
-const CTRL_OUVERTS = new Set();
-let CTRL_DEFIL = 0;   // position de défilement de la liste, conservée d'un affichage à l'autre   // établissements dépliés dans la liste (repliés par défaut)
+const CTRL_OUVERTS = new Set();   // établissements dépliés dans la liste (repliés par défaut)
+let CTRL_DEFIL = 0;               // position de défilement de la liste, conservée d'un affichage à l'autre
 
 const CRITERES = [
   { col: "Mention_exclusivite_PS", nom: "Inscription exclusivement via Parcoursup", aide: "Le site indique que la candidature se fait sur Parcoursup.",
@@ -117,17 +117,17 @@ function detailControle(liste) {
     <div class="c-liens">
       ${b.Lien_site ? `<a class="btn" href="${esc(b.Lien_site)}" target="_blank" rel="noopener">Ouvrir le site de la formation ↗</a>` : ""}
       ${r.Lien_Parcoursup ? `<a class="btn gris" href="${esc(r.Lien_Parcoursup)}" target="_blank" rel="noopener">Ouvrir la fiche Parcoursup ↗</a>` : ""}
-      <input id="c-site" value="${esc(b.Lien_site)}" placeholder="Adresse du site de la formation (https://…)" title="Adresse de la page de la formation sur le site de l'établissement">
+      <input id="ctl-site" value="${esc(b.Lien_site)}" placeholder="Adresse du site de la formation (https://…)" title="Adresse de la page de la formation sur le site de l'établissement">
     </div>
     <p class="rien">${esc(ancien)}</p>
     <table class="c-table">${lignes}</table>
-    <div class="c-bas"><div><b>Commentaire</b><textarea id="c-com" placeholder="Ce que vous avez constaté (page, bouton, formulaire…)">${esc(b.Commentaire)}</textarea></div>
-      <div class="c-capt" id="c-capt" tabindex="0"><b>Capture du site</b>
+    <div class="c-bas"><div><b>Commentaire</b><textarea id="ctl-com" placeholder="Ce que vous avez constaté (page, bouton, formulaire…)">${esc(b.Commentaire)}</textarea></div>
+      <div class="ctl-capt" id="ctl-capt" tabindex="0"><b>Capture du site</b>
         ${b.captures.map(x => `<img src="${x.url}" alt="capture">`).join("")}
         <small>${nbCaptures ? nbCaptures + " capture(s) déjà enregistrée(s) · " : ""}copiez une capture (Win+Maj+S) puis cliquez ici et collez (Ctrl+V)</small></div></div>
     <div class="c-actions"><span>Résultat : <b class="res ${res[0]}">${esc(res[1])}</b></span>
-      <span>${v.s === "ko" || v.s === "surv" ? `<button class="btn gris" id="c-mail">✉ Préparer le mail à l'établissement</button>` : ""}
-        <button class="btn vert" id="c-ok" ${v.s === "incomplet" ? "disabled" : ""}>Enregistrer${suivant ? " et formation suivante →" : ""}</button></span></div>`;
+      <span>${v.s === "ko" || v.s === "surv" ? `<button class="btn gris" id="ctl-mail">✉ Préparer le mail à l'établissement</button>` : ""}
+        <button class="btn vert" id="ctl-ok" ${v.s === "incomplet" ? "disabled" : ""}>Enregistrer${suivant ? " et formation suivante →" : ""}</button></span></div>`;
 }
 
 function brancherControle(zone) {
@@ -148,7 +148,7 @@ function brancherControle(zone) {
     CTRL_BROUILLON[x.dataset.crit] = CTRL_BROUILLON[x.dataset.crit] === x.dataset.val ? null : x.dataset.val;
     rendre();
   }));
-  const capt = document.getElementById("c-capt");
+  const capt = document.getElementById("ctl-capt");
   if (capt) capt.addEventListener("paste", async ev => {
     const it = [...(ev.clipboardData ? ev.clipboardData.items : [])].find(i => i.type.startsWith("image/"));
     if (!it || !CTRL_BROUILLON) return;
@@ -158,15 +158,18 @@ function brancherControle(zone) {
     CTRL_BROUILLON.captures.push({ blob, url: URL.createObjectURL(blob) });
     rendre();
   });
-  const mail = document.getElementById("c-mail");
+  const com = document.getElementById("ctl-com"), site = document.getElementById("ctl-site");
+  if (com) com.addEventListener("input", lireChampsControle);
+  if (site) site.addEventListener("input", lireChampsControle);
+  const mail = document.getElementById("ctl-mail");
   if (mail) mail.addEventListener("click", () => { lireChampsControle(); mailControle(); });
-  const ok = document.getElementById("c-ok");
+  const ok = document.getElementById("ctl-ok");
   if (ok) ok.addEventListener("click", async () => { lireChampsControle(); ok.disabled = true; ok.textContent = "Enregistrement…"; await enregistrerControle(); });
 }
 
 function lireChampsControle() {
   if (!CTRL_BROUILLON) return;
-  const c = document.getElementById("c-com"), s = document.getElementById("c-site");
+  const c = document.getElementById("ctl-com"), s = document.getElementById("ctl-site");
   if (c) CTRL_BROUILLON.Commentaire = c.value;
   if (s) CTRL_BROUILLON.Lien_site = s.value.trim();
 }
@@ -229,8 +232,12 @@ ${points.map(p => "- " + p).join("\n")}
 ${b.Commentaire ? "\nPrécision : " + b.Commentaire + "\n" : ""}
 Les admissions dans cette formation se font exclusivement via Parcoursup. Nous vous remercions de bien vouloir mettre votre site à jour et de nous en informer.
 
-Cordialement,`;
-  window.open(`mailto:${encodeURIComponent(c.email || "")}?subject=${encodeURIComponent(objet)}&body=${encodeURIComponent(corps)}`, "_blank");
+Cordialement,
+SAIO - Académie de Bordeaux`;
+  const lien = document.createElement("a");
+  lien.href = `mailto:${encodeURIComponent(c.email || "")}?subject=${encodeURIComponent(objet)}&body=${encodeURIComponent(corps)}`;
+  lien.target = "_blank"; lien.rel = "noopener";
+  document.body.appendChild(lien); lien.click(); lien.remove();
   enregistrerControle(true);
 }
 
