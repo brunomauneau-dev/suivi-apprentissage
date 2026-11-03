@@ -174,17 +174,39 @@ async function rapprocherAuto() {
 
 // ------------------------------------------------------------------ logique de suivi
 
+function verifAuto(fiche, cat) {
+  const vide = { uai: { s: "todo" }, rncp: { s: "todo" } };
+  if (!fiche || !cat) return vide;
+  if (!INDEX) indexer();
+  const uais = [fiche.UAI_formateur, fiche.UAI_lieu, fiche.UAI_gestionnaire].map(code).filter(Boolean);
+  const out = { ...vide };
+  if (cat._uai) {
+    const ok = uais.includes(cat._uai);
+    out.uai = { s: ok ? "done" : "ko", t: "auto" };
+    if (!ok) out.uaiAttendu = cat.UAI_validee;
+  }
+  const rf = chiffres(fiche.Code_RNCP);
+  if (cat._rncp && rf) {
+    const ok = rf === cat._rncp;
+    out.rncp = { s: ok ? "done" : "ko", t: "auto" };
+    if (!ok) out.rncpAttendu = "RNCP" + cat._rncp;
+  }
+  return out;
+}
+
 function analyser(r, maintenant) {
   const fiche = ficheDe(r);
   const cat = r.Cle_carif && r.Cle_carif !== "ABSENTE" ? catalogueLie(r) : trouverCatalogue(fiche);
   const ficheDate = (fiche && fiche.Recu_le) || r.Fiche_recue;
   const etat = (s, t) => ({ s, t });
   const verif = v => v === "Conforme" ? etat("done") : v === "À corriger" ? etat("ko") : etat("todo");
+  // UAI et RNCP vérifiés automatiquement avec l'export quand la formation y est retrouvée (le choix manuel reste prioritaire)
+  const auto = verifAuto(fiche, cat);
   const e = [
     r.Mail_recu ? etat("done", dateCourte(r.Mail_recu)) : etat("todo"),
     r.Lien_envoye ? etat("done", dateCourte(r.Lien_envoye)) : etat(ficheDate ? "done" : "todo"),
     ficheDate ? etat("done", dateCourte(ficheDate)) : etat("todo"),
-    verif(r.UAI), verif(r.RNCP),
+    r.UAI ? verif(r.UAI) : auto.uai, r.RNCP ? verif(r.RNCP) : auto.rncp,
     cat ? (problemesCarif(cat).length ? etat("ko") : etat("done")) : (r.Cle_carif === "ABSENTE" && CATALOGUE.length ? etat("ko") : etat("todo")),
     r.Publiee === "Publiée" ? etat("done", dateCourte(r.Publiee_le)) : etat("todo"),
   ];
@@ -209,8 +231,10 @@ function analyser(r, maintenant) {
   const jours = d => d ? Math.max(0, Math.floor((maintenant - d) / JOUR)) : null;
   const ficheJ = ficheDate ? jours(ficheDate > 1e11 ? Math.floor(ficheDate / 1000) : ficheDate) : null;
   if (e[3].s === "ko" || e[4].s === "ko") {
-    const quoi = [e[3].s === "ko" ? "UAI" : "", e[4].s === "ko" ? "RNCP" : ""].filter(Boolean).join(" et ");
-    return { ...base, cat_: "attente", depuis: ficheJ, motif: quoi + " à corriger", next: { cls: "wait", titre: ATT, txt: `${quoi} à corriger` } };
+    const parts = [e[3].s === "ko" ? "UAI à corriger" + (!r.UAI && auto.uaiAttendu ? " (attendu : " + auto.uaiAttendu + ")" : "") : "",
+      e[4].s === "ko" ? "RNCP à corriger" + (!r.RNCP && auto.rncpAttendu ? " (attendu : " + auto.rncpAttendu + ")" : "") : ""].filter(Boolean);
+    const court = [e[3].s === "ko" ? "UAI" : "", e[4].s === "ko" ? "RNCP" : ""].filter(Boolean).join(" et ") + " à corriger";
+    return { ...base, cat_: "attente", depuis: ficheJ, motif: court, next: { cls: "wait", titre: ATT, txt: parts.join(" · ") } };
   }
   if (!r.Lien_envoye && !ficheDate) return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Envoyer le lien de la fiche" } };
   if (!ficheDate) {
@@ -949,6 +973,8 @@ function voirFiche(id) {
       <p class="rien">Formation trouvée : ${esc(c.Libelle_formation)} — ${esc(c.Formateur_RS)} (${esc(c.Ville)}) · catalogue général : ${esc(c.Statut_catalogue)}</p>`
       : `<p class="rien">${CATALOGUE.length ? "Formation non trouvée dans l'export : vérifier les codes (SIRET, UAI, RNCP, code diplôme) ou la déclaration au Carif-Oref." : "Aucun export Carif-Oref importé."}</p>`}
     <h3>Ma vérification</h3>
+    <p class="rien">${c ? "UAI et RNCP sont cochés automatiquement à partir de l'export Carif-Oref ; cliquez ci-dessous seulement pour modifier." : "Formation non retrouvée dans l'export : vérification manuelle."}
+      ${fi.UAI_formateur || fi.UAI_lieu ? `<button class="btn-lien" id="acce">Vérifier l'UAI ${esc(code(fi.UAI_formateur || fi.UAI_lieu))} dans ACCE ↗</button>` : ""}</p>
     <div class="pop-btns">
       <button class="btn ${r.UAI === "Conforme" ? "vert" : "gris"}" data-v="UAI|Conforme">UAI conforme</button>
       <button class="btn ${r.UAI === "À corriger" ? "rouge" : "gris"}" data-v="UAI|À corriger">UAI à corriger</button>
@@ -957,6 +983,13 @@ function voirFiche(id) {
     </div>`;
   placer(pop, null);
   const fer = document.getElementById("pop-fermer"); if (fer) fer.addEventListener("click", fermerPop);
+  const ba = document.getElementById("acce");
+  if (ba) ba.addEventListener("click", async () => {
+    const u = code(fi.UAI_formateur || fi.UAI_lieu);
+    try { await navigator.clipboard.writeText(u); ba.textContent = `UAI ${u} copié : collez-le (Ctrl+V) dans la recherche ACCE ↗`; }
+    catch (e) { ba.textContent = `Recherchez ${u} dans ACCE ↗`; }
+    window.open("https://acce.depp.education.fr/acce_public/", "_blank", "noopener");
+  });
   pop.querySelectorAll("[data-v]").forEach(b => b.addEventListener("click", async () => {
     const [col, v] = b.dataset.v.split("|"), champs = { [col]: v };
     await maj(id, champs);
