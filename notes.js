@@ -93,7 +93,10 @@ function ouvrirNotes(id) {
     const nid = Number(b.dataset.nSuppr);
     if (!confirm("Supprimer cette note ?")) return;
     try {
-      if (DEMO) NOTES = NOTES.filter(x => x.id !== nid); else await actions([["RemoveRecord", "Notes", nid]]);
+      // supprimer l'ancien commentaire repris efface aussi le commentaire d'origine, sinon il serait repris de nouveau
+      const n = NOTES.find(x => x.id === nid), reprise = n && n.Reprise;
+      if (DEMO) { NOTES = NOTES.filter(x => x.id !== nid); if (reprise) r.Commentaire = ""; }
+      else await actions([["RemoveRecord", "Notes", nid], ...(reprise ? [["UpdateRecord", "Suivi", id, { Commentaire: "" }]] : [])]);
       if (DEMO) rendre(); else await charger();
       ouvrirNotes(id);
     } catch (e) { alert("Échec de la suppression : " + (e && e.message || e)); }
