@@ -33,7 +33,10 @@ function problemesCarif(c) {
   if (!c) return [];
   const pb = [], cible = rentreeCible();
   if (/archiv/i.test(c.Etat_diplome || "")) pb.push("diplôme archivé (code expiré) : mise à conformité RNCP / code diplôme");
-  if (rentreeOk(c) === false) pb.push(`aucune session ne démarre à la rentrée ${cible} (${texteRentree(c)}) : dates de formation à mettre à jour`);
+  if (rentreeOk(c) === false) {
+    const d = debutsSessions(c);
+    pb.push(`pas de session à la rentrée ${cible} (${d.length ? "dernière : " + d[d.length - 1].txt : texteRentree(c)}) → dates à mettre à jour`);
+  }
   return pb;
 }
 const ETAPES = [
@@ -262,15 +265,24 @@ async function ajouter(liste) {
 // ------------------------------------------------------------------ affichage principal
 
 let filtre = "tous", recherche = "";
+let onglet = "demandes";
+try { onglet = localStorage.getItem("suivi-onglet") === "ouvertes" ? "ouvertes" : "demandes"; } catch (e) { /* stockage indisponible */ }
+const PASTILLE = { relance: ["ko", "À relancer"], saio: ["warn", "À faire SAIO"], attente: ["wait", "En attente"], publie: ["ok", "Publiée"], parcoursup: ["ok", "Terminé"] };
+const CHIPS = {
+  demandes: [["tous", "Tous"], ["relance", "À relancer"], ["saio", "À faire SAIO"], ["attente", "En attente"], ["publie", "Publiées"]],
+  ouvertes: [["tous", "Tous"], ["relance", "À relancer"], ["saio", "À faire SAIO"], ["parcoursup", "Vérifiées"]],
+};
 const ouverts = new Set();
 
 function rendre() {
   const zone = document.getElementById("liste");
   if (!zone) return;
   const maintenant = aujourdhui();
-  const groupes = construire(ROWS, maintenant);
-  const toutes = groupes.flatMap(g => g.formations);
-  const n = c => toutes.filter(f => f.cat_ === c).length;
+  const tousGroupes = construire(ROWS, maintenant);
+  const toutes = tousGroupes.flatMap(g => g.formations);
+  const dansOnglet = f => !!f.historique === (onglet === "ouvertes");
+  const groupes = tousGroupes.map(g => ({ ...g, formations: g.formations.filter(dansOnglet) })).filter(g => g.formations.length);
+  const n = c => toutes.filter(f => dansOnglet(f) && f.cat_ === c).length;
 
   // sous-titre : état de l'export
   const st = document.getElementById("sous-titre");
@@ -294,33 +306,63 @@ function rendre() {
 
   panneaux(groupes, relances);
 
+  const cible = rentreeCible();
+  const nDem = toutes.filter(f => !f.historique).length, nOuv = toutes.filter(f => f.historique).length;
+  const aRel = h => toutes.filter(f => !!f.historique === h && f.cat_ === "relance").length, aSaio = h => toutes.filter(f => !!f.historique === h && f.cat_ === "saio").length;
+  const badges = h => (aRel(h) ? `<em class="b-ko">${aRel(h)} à relancer</em>` : "") + (aSaio(h) ? `<em class="b-warn">${aSaio(h)} à faire</em>` : "");
+  const ong = document.getElementById("onglets");
+  if (ong) {
+    ong.innerHTML = `<button class="onglet${onglet === "demandes" ? " on" : ""}" data-onglet="demandes">Nouvelles demandes <span>${nDem}</span>${badges(false)}</button>
+      <button class="onglet${onglet === "ouvertes" ? " on" : ""}" data-onglet="ouvertes">Formations ouvertes en ${cible - 1} — revérification ${cible} <span>${nOuv}</span>${badges(true)}</button>`;
+    ong.querySelectorAll("[data-onglet]").forEach(b => b.addEventListener("click", () => {
+      onglet = b.dataset.onglet; filtre = "tous";
+      try { localStorage.setItem("suivi-onglet", onglet); } catch (e) { /* stockage indisponible */ }
+      rendre();
+    }));
+  }
+  const chips = document.getElementById("chips");
+  if (chips) {
+    if (!CHIPS[onglet].some(([k]) => k === filtre)) filtre = "tous";
+    chips.innerHTML = CHIPS[onglet].map(([k, l]) => `<button class="chip${filtre === k ? " on" : ""}" data-f="${k}">${l}</button>`).join("");
+    chips.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => { filtre = c.dataset.f; rendre(); }));
+  }
   const q = norm(recherche);
-  const html = groupes.map(g => {
-    const fs = g.formations.filter(f => (filtre === "tous" || f.cat_ === filtre) && (!q || norm(g.nom).includes(q) || norm(f.r.Formation).includes(q)));
-    if (!fs.length) return "";
-    const tot = g.formations.length, c = k => g.formations.filter(f => f.cat_ === k).length;
-    const rel = c("relance"), sai = c("saio"), att = c("attente"), pub = c("publie"), ps = c("parcoursup");
-    const seg = (k, col) => k ? `<i style="width:${100 * k / tot}%;background:${col}"></i>` : "";
-    const pl = k => k > 1 ? "s" : "";
-    const tags = [
-      rel ? `<span class="tag ko">${rel} à relancer</span>` : "", sai ? `<span class="tag warn">${sai} à faire SAIO</span>` : "",
-      att ? `<span class="tag wait">${att} en attente</span>` : "", pub + ps ? `<span class="tag ok">${pub + ps} terminée${pl(pub + ps)}</span>` : ""].join("");
-    const ouvert = ouverts.has(g.cle) || !!q || filtre !== "tous";
-    return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
-      <div class="etab-head"><span class="chev">▶</span>
-        <div class="etab-name"><b>${esc(g.nom)}</b> <button class="btn-lien" data-renom-etab="${esc(g.nom)}" title="Renommer l'établissement">✎ renommer</button><span>${tot} formation${pl(tot)}${tot - ps - pub ? " · " + (tot - ps - pub) + " en cours" : ""}</span>
-          <span class="contact">${contactHtml(contactDe(g.nom))} <button class="btn-lien" data-contact="${esc(g.nom)}">✎ contact</button>
-</span></div>
-        <div><div class="progress">${seg(pub + ps, "var(--green)")}${seg(att, "#9fd8b0")}${seg(sai, "#f5a000")}${seg(rel, "var(--red)")}</div>
-          <div class="progress-label">${pub + ps} / ${tot} terminée${pl(pub + ps)}</div></div>
-        <div class="tags">${tags}</div></div>
-      <div class="forms">${fs.map(ligneFormation).join("")}
-        <div class="ajout-ligne">${(() => { const n = g.formations.filter(f => !f.r.Lien_envoye && !f.fiche && f.cat_ !== "parcoursup" && f.cat_ !== "publie").length;
-          return n ? `<button class="btn petit" data-mail="${esc(g.nom)}">✉ Envoyer ${n > 1 ? "les " + n + " fiches" : "la fiche"} par mail</button> &nbsp; ` : ""; })()}
-          <button class="btn-lien" data-ajout="${esc(g.nom)}">+ Ajouter une formation pour ${esc(g.nom)}</button></div></div>
-    </section>`;
-  }).join("");
-  zone.innerHTML = html || `<div class="empty">${ROWS.length ? "Aucune formation ne correspond." : "Aucune formation suivie. Cliquez sur « + Nouvelle demande »."}</div>`;
+  const garde = (g, f) => (filtre === "tous" || f.cat_ === filtre) && (!q || norm(g.nom).includes(q) || norm(f.r.Formation).includes(q) || norm(f.r.Lieu).includes(q));
+  let html;
+  if (onglet === "ouvertes") {
+    const ordre = { relance: 0, saio: 1, attente: 2, parcoursup: 3, publie: 3 };
+    const lignesO = groupes.flatMap(g => g.formations.filter(f => f.historique && garde(g, f)).map(f => ({ g, f })))
+      .sort((a, b) => ordre[a.f.cat_] - ordre[b.f.cat_] || a.g.nom.localeCompare(b.g.nom) || String(a.f.r.Formation).localeCompare(String(b.f.r.Formation)));
+    html = lignesO.length ? `<div class="carte-liste"><table class="liste-ouvertes">
+      <tr><th>Établissement</th><th>Formation</th><th>Retrouvée dans l'export</th><th>Diplôme</th><th>Session rentrée ${cible}</th><th>Statut</th></tr>
+      ${lignesO.map(x => ligneOuverte(x.g, x.f)).join("")}</table></div>` : "";
+  } else {
+    html = groupes.map(g => {
+      const toutesG = g.formations.filter(f => !f.historique);
+      const fs = toutesG.filter(f => garde(g, f));
+      if (!fs.length) return "";
+      const tot = toutesG.length, c = k => toutesG.filter(f => f.cat_ === k).length;
+      const rel = c("relance"), sai = c("saio"), att = c("attente"), fin = c("publie");
+      const pl = k => k > 1 ? "s" : "";
+      const tags = [rel ? `<span class="tag ko">${rel} à relancer</span>` : "", sai ? `<span class="tag warn">${sai} à faire SAIO</span>` : "",
+        att ? `<span class="tag wait">${att} en attente</span>` : "", fin ? `<span class="tag ok">${fin} publiée${pl(fin)}</span>` : ""].join("");
+      const ouvert = ouverts.has(g.cle) || !!q || filtre !== "tous" || groupes.filter(x => x.formations.some(f => !f.historique)).length <= 3;
+      const aEnvoyer = toutesG.filter(f => !f.r.Lien_envoye && !f.fiche && f.cat_ !== "publie").length;
+      return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
+        <div class="etab-head"><span class="chev">▶</span>
+          <div class="etab-name"><b>${esc(g.nom)}</b> <button class="btn-lien" data-renom-etab="${esc(g.nom)}" title="Renommer l'établissement">✎ renommer</button><span>${tot} formation${pl(tot)}</span>
+            <span class="contact">${contactHtml(contactDe(g.nom))} <button class="btn-lien" data-contact="${esc(g.nom)}">✎ contact</button></span></div>
+          <div class="tags">${tags}</div></div>
+        <div class="forms"><table class="liste-demandes">
+          <tr><th>Formation</th><th>Statut</th><th>Raison</th><th>Étapes</th><th></th></tr>
+          ${fs.map(ligneFormation).join("")}</table>
+          <div class="ajout-ligne">${aEnvoyer ? `<button class="btn petit" data-mail="${esc(g.nom)}">✉ Envoyer ${aEnvoyer > 1 ? "les " + aEnvoyer + " fiches" : "la fiche"} par mail</button> &nbsp; ` : ""}
+            <button class="btn-lien" data-ajout="${esc(g.nom)}">+ Ajouter une formation pour ${esc(g.nom)}</button></div></div>
+      </section>`;
+    }).join("");
+  }
+  zone.innerHTML = html || `<div class="empty">${(onglet === "ouvertes" ? nOuv : nDem) ? "Aucune formation ne correspond."
+    : onglet === "ouvertes" ? "Aucune formation ouverte les années précédentes." : "Aucune nouvelle demande. Cliquez sur « + Nouvelle demande »."}</div>`;
   brancher(zone);
 }
 
@@ -343,16 +385,17 @@ function panneaux(groupes, relances) {
   const taches = groupes.flatMap(g => g.formations.filter(f => f.cat_ === "saio").map(f => ({ etab: g.nom, f })));
   pan.innerHTML = `
     <section class="panneau"><h2>À relancer <span class="compte ${act.length ? "ko" : "ok"}">${act.length} établissement${act.length > 1 ? "s" : ""}</span></h2>
-      ${act.length ? `<div class="cartes">${act.map(e => `<div class="carte"><div class="carte-tete"><div><b>${esc(e.nom)}</b>
+      ${act.length ? `<div class="cartes${onglet === "ouvertes" ? " compactes" : ""}">${act.map(e => `<div class="carte"><div class="carte-tete"><div><b>${esc(e.nom)}</b>
           <div class="contact">${contactHtml(contactDe(e.nom), '<i>contact non renseigné</i>')}</div>
 </div>
           <button class="btn petit" data-relance="${e.ids.join(",")}">Relancé aujourd'hui</button></div>
-          <ul>${e.lignes.map(l => `<li><b>${esc(l.formation)}</b> — ${esc(l.motif)}${l.com ? `<div class="com">${esc(l.com)}</div>` : ""}</li>`).join("")}</ul></div>`).join("")}</div>`
+          ${onglet === "ouvertes" ? resumeMotifs(e) : `<ul>${e.lignes.map(l => `<li><b>${esc(l.formation)}</b> — ${esc(l.motif)}${l.com ? `<div class="com">${esc(l.com)}</div>` : ""}</li>`).join("")}</ul>`}</div>`).join("")}</div>`
         : `<p class="rien">Personne à relancer pour le moment.</p>`}
       ${mas.length ? `<p class="rien">Relancés récemment (réapparaissent après ${DELAI_RELANCE} jours si rien ne bouge) : ${mas.map(e => esc(e.nom) + " le " + dateCourte(e.derniere)).join(", ")}</p>` : ""}
     </section>
     <section class="panneau"><h2>À faire au SAIO <span class="compte ${taches.length ? "warn" : "ok"}">${taches.length}</span></h2>
-      ${taches.length ? `<ul class="taches">${taches.map(t => `<li><span class="tag warn">${esc(t.f.next.txt)}</span> ${esc(t.etab)} — ${esc(t.f.r.Formation)}
+      ${onglet === "ouvertes" ? (taches.length ? `<p>${taches.length} formation${taches.length > 1 ? "s" : ""} à retrouver dans l'export Carif-Oref (établissements à plusieurs sites, intitulés différents).</p>
+        <button class="btn petit" id="voir-saio">Afficher ces formations</button>` : `<p class="rien">Toutes les formations sont retrouvées dans l'export.</p>`) : taches.length ? `<ul class="taches">${taches.map(t => `<li><span class="tag warn">${esc(t.f.next.txt)}</span> ${esc(t.etab)} — ${esc(t.f.r.Formation)}
           ${t.f.fiche ? ` <button class="btn-lien" data-fiche="${t.f.r.id}">voir la fiche</button>` : ""}
           ${t.f.rappro ? ` <button class="btn-lien" data-rappro="${t.f.r.id}">retrouver dans l'export</button>` : ""}</li>`).join("")}</ul>`
         : `<p class="rien">Rien à faire pour le moment.</p>`}
@@ -365,30 +408,82 @@ function panneaux(groupes, relances) {
   }));
   pan.querySelectorAll("[data-fiche]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); voirFiche(Number(b.dataset.fiche)); }));
   pan.querySelectorAll("[data-rappro]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); rapprocher(Number(b.dataset.rappro)); }));
+  const vs = document.getElementById("voir-saio");
+  if (vs) vs.addEventListener("click", () => { filtre = "saio"; rendre(); const l = document.getElementById("chips"); if (l) l.scrollIntoView({ behavior: "smooth" }); });
+  pan.querySelectorAll("[data-voir-etab]").forEach(b => b.addEventListener("click", () => {
+    recherche = b.dataset.voirEtab; filtre = "relance";
+    const q = document.getElementById("q"); if (q) q.value = recherche;
+    rendre(); const l = document.getElementById("chips"); if (l) l.scrollIntoView({ behavior: "smooth" });
+  }));
 }
 
+// Carte de relance résumée (onglet des formations ouvertes) : nombre de formations par motif
+function resumeMotifs(e) {
+  const types = new Map();
+  for (const l of e.lignes) {
+    const ks = [];
+    if (/archiv/.test(l.motif)) ks.push("diplôme archivé");
+    if (/pas de session/.test(l.motif)) ks.push("pas de session à la rentrée " + rentreeCible());
+    if (/Absente/.test(l.motif)) ks.push("absente de l'export");
+    if (!ks.length) ks.push(l.motif);
+    ks.forEach(k => types.set(k, (types.get(k) || 0) + 1));
+  }
+  const n = e.lignes.length;
+  return `<p class="resume"><b>${n} formation${n > 1 ? "s" : ""}</b> : ${[...types].map(([k, v]) => `${esc(k)} (${v})`).join(" · ")}
+    <button class="btn-lien" data-voir-etab="${esc(e.nom)}">voir le détail</button></p>`;
+}
+
+function pastille(f) { const [cls, txt] = PASTILLE[f.cat_] || ["wait", ""]; return `<span class="pill ${cls}">${txt}</span>`; }
+
+function outilsFormation(f) {
+  const r = f.r;
+  return [f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
+    f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : "",
+    `<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "✎ commentaire" : "+ commentaire"}</button>`].join(" ");
+}
+
+// Onglet « Nouvelles demandes » : une ligne par formation — statut, raison, étapes en points, actions
 function ligneFormation(f) {
   const r = f.r;
-  const steps = ETAPES.map((et, i) => {
-    const s = f.e[i].s, ic = s === "done" ? "✓" : s === "ko" ? "!" : "";
-    return `<button class="step ${s}" data-id="${r.id}" data-etape="${i}" title="${et.type === "auto" ? "Vérifié automatiquement avec l'export" : "Cliquer pour modifier"}">
-      <span class="dot">${ic}</span>${et.nom}${f.e[i].t ? `<em>${esc(f.e[i].t)}</em>` : ""}</button>`;
+  const points = ETAPES.map((et, i) => {
+    const st = f.e[i].s, lib = st === "done" ? "fait" : st === "ko" ? "problème" : "à faire";
+    return `<button class="point ${st}" data-id="${r.id}" data-etape="${i}" title="${esc(et.nom)} : ${lib}${f.e[i].t ? " (" + esc(f.e[i].t) + ")" : ""}"></button>`;
   }).join("");
+  const prochaine = ETAPES.findIndex((et, i) => f.e[i].s !== "done");
   const sous = [];
   if (r.Lieu) sous.push(esc(r.Lieu));
   if (r.Lien_Parcoursup) sous.push(`<a href="${esc(r.Lien_Parcoursup)}" target="_blank" rel="noopener">fiche Parcoursup</a>`);
-  const outils = [
-    f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
-    f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : "",
-    `<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "Commentaire" : "+ Commentaire"}</button>`].join("");
-  return `<div class="form" data-id="${r.id}">
-    <div class="form-name"><b>${esc(r.Formation || "(sans intitulé)")}</b><span>${sous.join(" · ")}</span>
-      <span class="gestion"><button class="btn-lien" data-renom="${r.id}">renommer</button> · <button class="btn-lien rouge" data-suppr="${r.id}">supprimer</button></span></div>
-    <div class="steps">${steps}</div>
-    <div class="next ${f.next.cls}"><b>${esc(f.next.titre)}</b>${esc(f.next.txt)}
-      <div class="outils">${outils}</div>
-      ${r.Commentaire ? `<div class="com">${esc(r.Commentaire)}</div>` : ""}</div>
-  </div>`;
+  sous.push(`<button class="btn-lien" data-renom="${r.id}">renommer</button>`, `<button class="btn-lien rouge" data-suppr="${r.id}">supprimer</button>`);
+  const titre = f.next.titre && !/^(À relancer|À faire au SAIO|Terminé|En attente)$/.test(f.next.titre) ? `<b>${esc(f.next.titre)}</b>` : "";
+  return `<tr class="ligne-f" data-id="${r.id}">
+    <td class="f-nom"><b>${esc(r.Formation || "(sans intitulé)")}</b><small>${sous.join(" · ")}</small></td>
+    <td>${pastille(f)}</td>
+    <td class="raison">${titre}${esc(f.next.txt)}${r.Commentaire ? `<div class="com">${esc(r.Commentaire)}</div>` : ""}</td>
+    <td class="points">${points}<small>${prochaine < 0 ? "7/7" : ETAPES[prochaine].nom}</small></td>
+    <td class="outils">${outilsFormation(f)}</td></tr>`;
+}
+
+// Onglet « Formations ouvertes » : ce qui compte pour la nouvelle campagne
+function ligneOuverte(g, f) {
+  const r = f.r, c = f.cat, ok = '<span class="ok">✓</span>', ko = '<span class="ko">✗</span>';
+  const pub = r.Publiee_le ? "publiée le " + new Date(r.Publiee_le * 1000).toLocaleDateString("fr-FR", { timeZone: "UTC" }) : "";
+  const sous = [r.Lieu ? esc(r.Lieu) : "", r.Lien_Parcoursup ? `<a href="${esc(r.Lien_Parcoursup)}" target="_blank" rel="noopener">fiche Parcoursup${r.g_ta_cod ? " n° " + esc(r.g_ta_cod) : ""}</a>` : "", pub].filter(Boolean);
+  let export_, dip = "—", ses = "—";
+  if (!CATALOGUE.length) export_ = `<span class="gris">export non importé</span>`;
+  else if (r.Cle_carif === "ABSENTE") export_ = `${ko} absente <button class="btn-lien" data-rappro="${r.id}">changer</button>`;
+  else if (!c) export_ = `<button class="btn petit" data-rappro="${r.id}">Retrouver</button>`;
+  else {
+    export_ = `${ok} <button class="btn-lien noir" data-rappro="${r.id}" title="Changer la formation rapprochée">${esc(c.Formateur_RS || c.Libelle_formation)}</button><small>${esc(c.Ville || "")}${c.UAI_validee ? " · " + esc(c.UAI_validee) : ""}</small>`;
+    dip = /archiv/i.test(c.Etat_diplome || "") ? `${ko} archivé` : c.Etat_diplome ? `${ok} valide` : "?";
+    const d = debutsSessions(c), rok = rentreeOk(c), [a, b] = fenetreRentree();
+    const bonne = d.find(x => x.t >= a && x.t <= b);
+    ses = rok === false ? `${ko} ${d.length ? "dernière : " + d[d.length - 1].txt : "aucune pour " + rentreeCible()}` : rok ? `${ok} ${bonne ? bonne.txt : rentreeCible()}` : "?";
+  }
+  return `<tr class="ligne-o">
+    <td class="etab-cell"><b>${esc(g.nom)}</b></td>
+    <td class="f-nom"><b>${esc(r.Formation || "")}</b><small>${sous.join(" · ")}</small>${r.Commentaire ? `<div class="com">${esc(r.Commentaire)}</div>` : ""}</td>
+    <td class="export">${export_}</td><td class="ck">${dip}</td><td class="ck">${ses}</td>
+    <td class="statut">${pastille(f)}<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "✎ commentaire" : "+ commentaire"}</button></td></tr>`;
 }
 
 function brancher(zone) {
@@ -396,7 +491,7 @@ function brancher(zone) {
     const s = h.parentElement; s.classList.toggle("open");
     if (s.classList.contains("open")) ouverts.add(s.dataset.cle); else ouverts.delete(s.dataset.cle);
   }));
-  zone.querySelectorAll(".step").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); ouvrirEtape(b, Number(b.dataset.id), Number(b.dataset.etape)); }));
+  zone.querySelectorAll("[data-etape]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); ouvrirEtape(b, Number(b.dataset.id), Number(b.dataset.etape)); }));
   zone.querySelectorAll("[data-com]").forEach(b => b.addEventListener("click", () => {
     const id = Number(b.dataset.com), r = ROWS.find(x => x.id === id);
     const t = prompt("Commentaire pour « " + (r.Formation || "") + " » :", r.Commentaire || "");
@@ -943,10 +1038,6 @@ if (typeof window !== "undefined") {
   window.addEventListener("DOMContentLoaded", () => {
     const q = document.getElementById("q");
     if (q) q.addEventListener("input", e => { recherche = e.target.value; rendre(); });
-    document.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => {
-      document.querySelectorAll(".chip").forEach(x => x.classList.remove("on"));
-      c.classList.add("on"); filtre = c.dataset.f; rendre();
-    }));
     const nouv = document.getElementById("nouveau");
     if (nouv) nouv.addEventListener("click", ev => { ev.stopPropagation(); ouvrirAjout(""); });
     const imp = document.getElementById("importer"), fic = document.getElementById("fichier-export");

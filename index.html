@@ -6,7 +6,7 @@
 <title>Suivi des référencements</title>
 <script src="https://docs.getgrist.com/grist-plugin-api.js" defer></script>
 <script src="lib/xlsx.full.min.js" defer></script>
-<script src="suivi.js?v=18" defer></script>
+<script src="suivi.js?v=21" defer></script>
 <style>
   :root {
     --bg: #f6f6f6; --card: #ffffff; --text: #1e1e1e; --muted: #666; --line: #e5e5e5;
@@ -132,6 +132,35 @@
   }
   .ligne-recherche { display: flex; gap: 6px; margin: 8px 0; } .ligne-recherche input { flex: 1; padding: 5px 8px; border: 1px solid #cfd5df; border-radius: 6px; font: inherit; }
   table.rappro td { vertical-align: top; } table.rappro tr.choisi td { background: #e3f4ea; }
+  /* onglets et listes (v19) */
+  .onglets { display: flex; gap: 8px; margin: 16px 24px 0; flex-wrap: wrap; }
+  .onglet { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 10px 18px; font: 600 15px inherit; cursor: pointer; color: var(--text); }
+  .onglet em { font-style: normal; font-size: 12px; font-weight: 600; border-radius: 10px; padding: 1px 8px; margin-left: 6px; }
+  .onglet .b-ko { background: var(--red-bg); color: var(--red); } .onglet .b-warn { background: var(--amber-bg); color: var(--amber); }
+  .onglet span { display: inline-block; margin-left: 6px; background: var(--grey-bg); border-radius: 10px; padding: 0 7px; font-size: 12px; }
+  .onglet.on { background: var(--blue); color: #fff; border-color: var(--blue); } .onglet.on span { background: rgba(255,255,255,.2); }
+  .chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .pill { display: inline-block; border-radius: 20px; padding: 2px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .pill.ko { background: var(--red-bg); color: var(--red); } .pill.warn { background: var(--amber-bg); color: var(--amber); }
+  .pill.ok { background: var(--green-bg); color: var(--green); } .pill.wait { background: var(--grey-bg); color: #555; }
+  table.liste-demandes, table.liste-ouvertes { width: 100%; border-collapse: collapse; }
+  .liste-demandes th, .liste-ouvertes th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--card); }
+  .liste-demandes td, .liste-ouvertes td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  .liste-demandes tr:hover td, .liste-ouvertes tr:hover td { background: #fafbff; }
+  .f-nom { min-width: 260px; } .f-nom b { display: block; } .f-nom small, .export small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .f-nom small .btn-lien { font-size: 12px; }
+  .raison { max-width: 380px; } .raison b { display: block; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .points { white-space: nowrap; } .points small { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .point { width: 11px; height: 11px; border-radius: 50%; border: 0; padding: 0; margin-right: 3px; cursor: pointer; background: #d5d9e1; vertical-align: middle; }
+  .point.done { background: var(--green); } .point.ko { background: var(--red); } .point:hover { outline: 2px solid var(--blue); outline-offset: 1px; }
+  .outils { white-space: nowrap; text-align: right; }
+  .carte-liste { margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .liste-ouvertes .etab-cell { white-space: nowrap; } .liste-ouvertes .ck { white-space: nowrap; }
+  .liste-ouvertes .ok { color: var(--green); font-weight: 700; } .liste-ouvertes .ko { color: var(--red); font-weight: 700; } .gris { color: var(--muted); }
+  .liste-ouvertes .statut { white-space: nowrap; } .liste-ouvertes .statut .btn-lien { display: block; margin-top: 4px; font-size: 12px; }
+  .btn-lien.noir { color: var(--text); text-decoration: underline dotted; font-weight: 600; }
+  .etab .forms { padding: 0; }
+  .cartes.compactes .carte .resume { margin: 6px 0 0; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -140,16 +169,11 @@
   <div class="kpis" id="kpis"></div>
 </header>
 <div id="bandeaux"></div>
+<div class="onglets" id="onglets"></div>
 <div class="panneaux" id="panneaux"></div>
-<h2 class="titre-liste">Toutes les formations, par établissement</h2>
 <div class="bar">
-  <input id="q" type="search" placeholder="Rechercher un établissement ou une formation…">
-  <button class="chip on" data-f="tous">Tous</button>
-  <button class="chip" data-f="relance">À relancer</button>
-  <button class="chip" data-f="saio">À faire SAIO</button>
-  <button class="chip" data-f="attente">En attente</button>
-  <button class="chip" data-f="publie">Publiées cette campagne</button>
-  <button class="chip" data-f="parcoursup">Déjà sur Parcoursup</button>
+  <input id="q" type="search" placeholder="Rechercher un établissement, une formation, un site…">
+  <span id="chips" class="chips"></span>
   <button class="btn-nouveau" id="nouveau">+ Nouvelle demande</button>
   <button class="refresh" id="importer" title="Récupère l'export Apprentissage sur la page CAP Métiers">Importer l'export Carif-Oref</button>
   <input type="file" id="fichier-export" accept=".xlsb,.xlsx,.xls,.csv" hidden>
