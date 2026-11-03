@@ -378,28 +378,64 @@ function aRelancer(groupes, maintenant) {
   return out.sort((a, b) => a.masque - b.masque || a.nom.localeCompare(b.nom));
 }
 
+let RELANCES_TOUTES = false;
+
+// Motif de relance en quelques mots (pour le résumé par établissement)
+function motifsCourts(m) {
+  const k = [];
+  if (/Fiche non reçue/i.test(m)) k.push("fiche non reçue");
+  if (/UAI : à corriger/.test(m)) k.push("UAI à corriger");
+  if (/RNCP : à corriger/.test(m)) k.push("RNCP à corriger");
+  if (/archiv/i.test(m)) k.push("diplôme archivé");
+  if (/pas de session|aucune session/i.test(m)) k.push("dates de session " + rentreeCible());
+  if (/Absente/i.test(m)) k.push("absente de l'export");
+  return k.length ? k : [m.length > 40 ? m.slice(0, 40) + "…" : m];
+}
+
 function panneaux(groupes, relances) {
   const pan = document.getElementById("panneaux");
   if (!pan) return;
   const act = relances.filter(e => !e.masque), mas = relances.filter(e => e.masque);
+  const MAX = 6, vus = RELANCES_TOUTES ? act : act.slice(0, MAX);
+  const ligneRelance = e => {
+    const types = new Map();
+    e.lignes.forEach(l => motifsCourts(l.motif).forEach(k => types.set(k, (types.get(k) || 0) + 1)));
+    const c = contactDe(e.nom);
+    const contact = [c.nom ? esc(c.nom) : "", c.tel ? `<a href="tel:${esc(c.tel.replace(/\s/g, ""))}">${esc(c.tel)}</a>` : "", c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ""].filter(Boolean);
+    return `<tr><td><b>${esc(e.nom)}</b><small>${e.lignes.length} formation${e.lignes.length > 1 ? "s" : ""}</small></td>
+      <td class="contact-cell">${contact.length ? contact.join("<br>") : `<button class="btn-lien gris" data-contact="${esc(e.nom)}">+ ajouter un contact</button>`}</td>
+      <td>${[...types].map(([k, v]) => `<span class="motif">${esc(k)}${e.lignes.length > 1 ? ` <b>${v}</b>` : ""}</span>`).join(" ")}</td>
+      <td class="actions"><button class="btn-lien" data-voir-etab="${esc(e.nom)}">détail</button>
+        <button class="btn petit" data-relance="${e.ids.join(",")}">Relancé aujourd'hui</button></td></tr>`;
+  };
+  // à faire au SAIO : regroupé par action
   const taches = groupes.flatMap(g => g.formations.filter(f => f.cat_ === "saio").map(f => ({ etab: g.nom, f })));
+  const parAction = new Map();
+  for (const t of taches) {
+    const k = t.f.next.txt.replace(/\s*\(voir la fiche\)/, "");
+    if (!parAction.has(k)) parAction.set(k, []);
+    parAction.get(k).push(t);
+  }
+  const ordreAct = [...parAction].sort((a, b) => b[1].length - a[1].length);
   pan.innerHTML = `
     <section class="panneau"><h2>À relancer <span class="compte ${act.length ? "ko" : "ok"}">${act.length} établissement${act.length > 1 ? "s" : ""}</span></h2>
-      ${act.length ? `<div class="cartes${onglet === "ouvertes" ? " compactes" : ""}">${act.map(e => `<div class="carte"><div class="carte-tete"><div><b>${esc(e.nom)}</b>
-          <div class="contact">${contactHtml(contactDe(e.nom), '<i>contact non renseigné</i>')}</div>
-</div>
-          <button class="btn petit" data-relance="${e.ids.join(",")}">Relancé aujourd'hui</button></div>
-          ${onglet === "ouvertes" ? resumeMotifs(e) : `<ul>${e.lignes.map(l => `<li><b>${esc(l.formation)}</b> — ${esc(l.motif)}${l.com ? `<div class="com">${esc(l.com)}</div>` : ""}</li>`).join("")}</ul>`}</div>`).join("")}</div>`
+      ${act.length ? `<table class="tab-panneau">${vus.map(ligneRelance).join("")}</table>
+        ${act.length > MAX ? `<button class="btn-lien" id="relances-toutes">${RELANCES_TOUTES ? "Réduire" : `Afficher les ${act.length - MAX} autres établissements`}</button>` : ""}`
         : `<p class="rien">Personne à relancer pour le moment.</p>`}
-      ${mas.length ? `<p class="rien">Relancés récemment (réapparaissent après ${DELAI_RELANCE} jours si rien ne bouge) : ${mas.map(e => esc(e.nom) + " le " + dateCourte(e.derniere)).join(", ")}</p>` : ""}
+      ${mas.length ? `<p class="rien">Relancés récemment (reviennent après ${DELAI_RELANCE} jours si rien ne bouge) : ${mas.map(e => esc(e.nom) + " le " + dateCourte(e.derniere)).join(", ")}</p>` : ""}
     </section>
     <section class="panneau"><h2>À faire au SAIO <span class="compte ${taches.length ? "warn" : "ok"}">${taches.length}</span></h2>
-      ${onglet === "ouvertes" ? (taches.length ? `<p>${taches.length} formation${taches.length > 1 ? "s" : ""} à retrouver dans l'export Carif-Oref (établissements à plusieurs sites, intitulés différents).</p>
-        <button class="btn petit" id="voir-saio">Afficher ces formations</button>` : `<p class="rien">Toutes les formations sont retrouvées dans l'export.</p>`) : taches.length ? `<ul class="taches">${taches.map(t => `<li><span class="tag warn">${esc(t.f.next.txt)}</span> ${esc(t.etab)} — ${esc(t.f.r.Formation)}
-          ${t.f.fiche ? ` <button class="btn-lien" data-fiche="${t.f.r.id}">voir la fiche</button>` : ""}
-          ${t.f.rappro ? ` <button class="btn-lien" data-rappro="${t.f.r.id}">retrouver dans l'export</button>` : ""}</li>`).join("")}</ul>`
-        : `<p class="rien">Rien à faire pour le moment.</p>`}
+      ${taches.length ? `<table class="tab-panneau">${ordreAct.map(([k, ts]) => {
+        const etabs = [...new Set(ts.map(t => t.etab))];
+        return `<tr><td><b>${esc(k)}</b><small>${esc(etabs.slice(0, 4).join(", "))}${etabs.length > 4 ? ` et ${etabs.length - 4} autre${etabs.length > 5 ? "s" : ""}` : ""}</small></td>
+          <td class="nb">${ts.length}</td>
+          <td class="actions">${ts.length === 1 && ts[0].f.fiche ? `<button class="btn petit" data-fiche="${ts[0].f.r.id}">Voir la fiche</button>`
+            : ts.length === 1 && ts[0].f.rappro ? `<button class="btn petit" data-rappro="${ts[0].f.r.id}">Retrouver</button>`
+            : `<button class="btn petit gris" data-voir-saio="${esc(k)}">Afficher</button>`}</td></tr>`;
+      }).join("")}</table>` : `<p class="rien">Rien à faire pour le moment.</p>`}
     </section>`;
+  const tout = document.getElementById("relances-toutes");
+  if (tout) tout.addEventListener("click", () => { RELANCES_TOUTES = !RELANCES_TOUTES; rendre(); });
   pan.querySelectorAll("[data-relance]").forEach(b => b.addEventListener("click", async () => {
     const ids = b.dataset.relance.split(",").map(Number), d = aujourdhui();
     if (DEMO) { ROWS.forEach(r => { if (ids.includes(r.id)) r.Relance_le = d; }); rendre(); return; }
@@ -408,29 +444,16 @@ function panneaux(groupes, relances) {
   }));
   pan.querySelectorAll("[data-fiche]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); voirFiche(Number(b.dataset.fiche)); }));
   pan.querySelectorAll("[data-rappro]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); rapprocher(Number(b.dataset.rappro)); }));
-  const vs = document.getElementById("voir-saio");
-  if (vs) vs.addEventListener("click", () => { filtre = "saio"; rendre(); const l = document.getElementById("chips"); if (l) l.scrollIntoView({ behavior: "smooth" }); });
+  pan.querySelectorAll("[data-contact]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); editerContact(b.dataset.contact, b); }));
+  const versListe = () => { rendre(); const l = document.getElementById("chips"); if (l) l.scrollIntoView({ behavior: "smooth" }); };
+  pan.querySelectorAll("[data-voir-saio]").forEach(b => b.addEventListener("click", () => {
+    filtre = "saio"; recherche = ""; const q = document.getElementById("q"); if (q) q.value = ""; versListe();
+  }));
   pan.querySelectorAll("[data-voir-etab]").forEach(b => b.addEventListener("click", () => {
     recherche = b.dataset.voirEtab; filtre = "relance";
     const q = document.getElementById("q"); if (q) q.value = recherche;
-    rendre(); const l = document.getElementById("chips"); if (l) l.scrollIntoView({ behavior: "smooth" });
+    versListe();
   }));
-}
-
-// Carte de relance résumée (onglet des formations ouvertes) : nombre de formations par motif
-function resumeMotifs(e) {
-  const types = new Map();
-  for (const l of e.lignes) {
-    const ks = [];
-    if (/archiv/.test(l.motif)) ks.push("diplôme archivé");
-    if (/pas de session/.test(l.motif)) ks.push("pas de session à la rentrée " + rentreeCible());
-    if (/Absente/.test(l.motif)) ks.push("absente de l'export");
-    if (!ks.length) ks.push(l.motif);
-    ks.forEach(k => types.set(k, (types.get(k) || 0) + 1));
-  }
-  const n = e.lignes.length;
-  return `<p class="resume"><b>${n} formation${n > 1 ? "s" : ""}</b> : ${[...types].map(([k, v]) => `${esc(k)} (${v})`).join(" · ")}
-    <button class="btn-lien" data-voir-etab="${esc(e.nom)}">voir le détail</button></p>`;
 }
 
 function pastille(f) { const [cls, txt] = PASTILLE[f.cat_] || ["wait", ""]; return `<span class="pill ${cls}">${txt}</span>`; }
