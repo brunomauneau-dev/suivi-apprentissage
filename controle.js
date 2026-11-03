@@ -25,7 +25,8 @@ const POINTS_MAIL = {
 
 // La campagne de contrôle commence le 1er septembre précédant la rentrée visée
 function debutCampagne() { return Date.UTC(rentreeCible() - 1, 8, 1) / 1000; }
-function perimetreControle() { return ROWS.filter(r => estHistorique(r) || r.Publiee === "Publiée"); }
+// Toutes les formations suivies : déjà ouvertes et nouvelles demandes (le site peut être contrôlé dès la demande)
+function perimetreControle() { return ROWS.filter(r => r.Formation); }
 function affDe(id) { return AFFICHAGE.find(a => Number(a.Formation) === id) || null; }
 
 // Résultat d'un contrôle (valeurs des critères) : ok, surv (à surveiller), ko, incomplet
