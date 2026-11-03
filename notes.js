@@ -60,7 +60,7 @@ function ouvrirNotes(id) {
   pop.innerHTML = `<div class="fiche-tete"><b>Notes — ${esc(r.Formation || "")}</b><button class="btn gris petit" id="n-fermer">Fermer</button></div>
     <p class="rien">${esc(r.Etablissement || "")}</p>
     <textarea id="n-texte" rows="3" placeholder="ex. appel du proviseur : la fiche sera remplie cette semaine"></textarea>
-    ${autres.length ? `<label class="case"><input type="checkbox" id="n-toutes"> Ajouter aussi aux ${autres.length} autre${autres.length > 1 ? "s" : ""} formation${autres.length > 1 ? "s" : ""} de ${esc(r.Etablissement)}</label>` : ""}
+    ${autres.length ? `<label class="case"><input type="checkbox" id="n-toutes"> Ajouter aussi ${autres.length > 1 ? `aux ${autres.length} autres formations` : "à l'autre formation"} de ${esc(r.Etablissement)}</label>` : ""}
     <div class="pop-btns"><button class="btn" id="n-ok">Ajouter la note</button></div>
     ${ns.length ? `<ul class="notes">${ns.map(n => `<li data-note="${n.id}"><b>${esc(enteteNote(n))}
         <span class="n-actions"><button class="btn-lien" data-n-modif="${n.id}">modifier</button> · <button class="btn-lien rouge" data-n-suppr="${n.id}">supprimer</button></span></b>
