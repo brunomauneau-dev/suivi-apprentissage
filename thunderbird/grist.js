@@ -23,13 +23,14 @@ function idDocument(saisie) {
 async function appelGrist(r, methode, chemin, corps) {
   const rep = await fetch(`${r.serveur}/api/docs/${encodeURIComponent(r.document)}${chemin}`, {
     method: methode,
+    credentials: "omit",   // Grist refuse les cookies dans une requête venant d'un module : seule la clé d'accès est envoyée
     headers: { Authorization: "Bearer " + r.cle, "Content-Type": "application/json" },
     body: corps ? JSON.stringify(corps) : undefined,
   });
   if (!rep.ok) {
     let detail = "";
     try { detail = (await rep.json()).error || ""; } catch (e) { /* rien */ }
-    if (rep.status === 401 || rep.status === 403) throw new Error("accès refusé : vérifiez la clé d'accès Grist dans les réglages du module" + (detail ? " (" + detail + ")" : ""));
+    if ((rep.status === 401 || rep.status === 403) && !/cross-origin/i.test(detail)) throw new Error("accès refusé : vérifiez la clé d'accès Grist dans les réglages du module" + (detail ? " (" + detail + ")" : ""));
     if (rep.status === 404) throw new Error("document ou table « Suivi » introuvable : vérifiez l'adresse du document dans les réglages du module");
     throw new Error(`Grist a répondu ${rep.status}${detail ? " : " + detail : ""}`);
   }
