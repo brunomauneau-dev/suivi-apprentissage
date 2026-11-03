@@ -154,7 +154,7 @@ function candidatsHistorique(r) {
 }
 
 // Rapproche automatiquement les cas sûrs (une seule fois par chargement)
-let RAPPRO_FAIT = false, LIENS_FAITS = false;
+let RAPPRO_FAIT = false, LIENS_FAITS = false, REPRISE_FAITE = false;
 async function rapprocherAuto() {
   if (RAPPRO_FAIT || !CATALOGUE.length) return false;
   RAPPRO_FAIT = true;
@@ -523,13 +523,13 @@ function ligneFormation(f) {
   if (r.Lieu) sous.push(esc(r.Lieu));
   if (r.Lien_Parcoursup) sous.push(`<a href="${esc(r.Lien_Parcoursup)}" target="_blank" rel="noopener">fiche Parcoursup</a>`);
   sous.push(`<button class="btn-lien" data-renom="${r.id}">renommer</button>`, `<button class="btn-lien rouge" data-suppr="${r.id}">supprimer</button>`,
-    `<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "✎ commentaire" : "+ commentaire"}</button>`);
+    lienNote(r));
   const couleur = { saio: "warn", attente: "wait", publie: "ok" }[f.cat_] || "wait";
   const titre = f.cat_ === "saio" ? "À faire au SAIO" : f.next.titre;
   const boutons = [f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
     f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : ""].join(" ");
   return `<tr class="ligne-f" data-id="${r.id}">
-    <td class="f-nom"><b>${esc(r.Formation || "(sans intitulé)")}</b><small>${sous.join(" · ")}</small>${r.Commentaire ? `<div class="com">${esc(r.Commentaire)}</div>` : ""}</td>
+    <td class="f-nom"><b>${esc(r.Formation || "(sans intitulé)")}</b><small>${sous.join(" · ")}</small>${resumeNotes(r)}</td>
     ${cases}
     <td class="action ${couleur}"><b>${esc(titre)}</b><span>${esc(f.next.txt)}</span>${boutons.trim() ? `<div>${boutons}</div>` : ""}</td></tr>`;
 }
@@ -551,9 +551,9 @@ function ligneOuverte(g, f) {
     ses = rok === false ? `${ko} ${d.length ? "dernière : " + d[d.length - 1].txt : "aucune pour " + rentreeCible()}` : rok ? `${ok} ${bonne ? bonne.txt : rentreeCible()}` : "?";
   }
   return `<tr class="ligne-o">
-    <td class="f-nom"><b>${esc(r.Formation || "")}</b><small>${sous.join(" · ")}</small>${r.Commentaire ? `<div class="com">${esc(r.Commentaire)}</div>` : ""}</td>
+    <td class="f-nom"><b>${esc(r.Formation || "")}</b><small>${sous.join(" · ")}</small>${resumeNotes(r)}</td>
     <td class="export">${export_}</td><td class="ck">${dip}</td><td class="ck">${ses}</td>
-    <td class="statut">${pastille(f)}<button class="btn-lien" data-com="${r.id}">${r.Commentaire ? "✎ commentaire" : "+ commentaire"}</button></td></tr>`;
+    <td class="statut">${pastille(f)}${lienNote(r)}</td></tr>`;
 }
 
 async function renommerEtab(ancien) {
@@ -583,11 +583,7 @@ function brancher(zone) {
     if (s.classList.contains("open")) ouverts.add(s.dataset.cle); else ouverts.delete(s.dataset.cle);
   }));
   zone.querySelectorAll("[data-etape]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); ouvrirEtape(b, Number(b.dataset.id), Number(b.dataset.etape)); }));
-  zone.querySelectorAll("[data-com]").forEach(b => b.addEventListener("click", () => {
-    const id = Number(b.dataset.com), r = ROWS.find(x => x.id === id);
-    const t = prompt("Commentaire pour « " + (r.Formation || "") + " » :", r.Commentaire || "");
-    if (t !== null) maj(id, { Commentaire: t.trim() });
-  }));
+  zone.querySelectorAll("[data-com]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); ouvrirNotes(Number(b.dataset.com)); }));
   zone.querySelectorAll("[data-suppr]").forEach(b => b.addEventListener("click", async () => {
     const id = Number(b.dataset.suppr), r = ROWS.find(x => x.id === id);
     if (!confirm("Supprimer « " + (r.Formation || "") + " » du suivi ?")) return;
@@ -1067,7 +1063,8 @@ async function importerExport(fichier, silencieux) {
 
 async function charger() {
   try {
-    const [s, f, c, p, af] = await Promise.all(["Suivi", "Fiches", "Catalogue", "Parametres", "Affichage"].map(t => grist.docApi.fetchTable(t).catch(() => null)));
+    const [s, f, c, p, af, nt0] = await Promise.all(["Suivi", "Fiches", "Catalogue", "Parametres", "Affichage", "Notes"].map(t => grist.docApi.fetchTable(t).catch(() => null)));
+    const nt = await preparerNotes(nt0).catch(() => null);
     if (!s) throw new Error("table « Suivi » introuvable ou accès refusé");
     const manquantes = [["Contact_nom", "Contact (nom)"], ["Contact_tel", "Contact (téléphone)"], ["Contact_email", "Contact (mail)"],
       ["Motif_UAI", "Correction UAI demandée"], ["Motif_RNCP", "Correction RNCP demandée"], ["Cle_carif", "Formation de l'export (clé)"], ["Lien_site", "Site de la formation"]]
@@ -1085,7 +1082,7 @@ async function charger() {
       await grist.docApi.applyUserActions([["AddColumn", "Affichage", "Mail_envoye_le", { type: "Date", label: "Mail envoyé le", isFormula: false }]]);
       af.Mail_envoye_le = af.id.map(() => null);
     }
-    ROWS = lignes(s); FICHES = lignes(f); CATALOGUE = lignes(c); PARAM = lignes(p)[0] || {}; AFFICHAGE = lignes(af); INDEX = null; DEMO = false;
+    ROWS = lignes(s); FICHES = lignes(f); CATALOGUE = lignes(c); PARAM = lignes(p)[0] || {}; AFFICHAGE = lignes(af); NOTES = lignes(nt); INDEX = null; DEMO = false;
   } catch (e) {
     const ban = document.getElementById("bandeaux");
     if (ban) ban.innerHTML = `<div class="banner" style="background:var(--red-bg);color:var(--red)">Impossible de lire le document (${esc(e && e.message || e)}).
@@ -1094,6 +1091,7 @@ async function charger() {
   }
   try { if (await rapprocherAuto()) return charger(); } catch (e) { /* rapprochement automatique non bloquant */ }
   if (!LIENS_FAITS) { LIENS_FAITS = true; if (await completerLiensSites()) return charger(); }
+  if (!REPRISE_FAITE) { REPRISE_FAITE = true; try { if (await reprendreCommentaires()) return charger(); } catch (e) { /* reprise non bloquante */ } }
   rendre();
 }
 
@@ -1120,6 +1118,7 @@ function demo() {
   ROWS.filter(r => r.Publiee === "Publiée" || r.Origine).forEach(r => { r.Lien_site = r.Lien_site || "https://www.exemple-etablissement.fr/formations"; });
   AFFICHAGE = [{ id: 1, Formation: 1, Mention_exclusivite_PS: "Oui", Mention_hors_PS: "Non", Pieces_non_necessaires: "Non", Entretien_admission: "Oui",
     Formation_identique_initiale: "Non", Commentaire: "", Date_controle: j("21/10") }];
+  NOTES = [{ id: 1, Formation: 2, Date: j("25/10"), Texte: "Appel de Mme Martin : la fiche sera remplie après les vacances.", Auteur: "B. Mauneau" }];
   INDEX = null;
   rendre();
 }
