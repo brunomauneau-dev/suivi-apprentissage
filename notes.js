@@ -75,7 +75,8 @@ function ouvrirNotes(id) {
   pop.querySelectorAll("[data-n-modif]").forEach(b => b.addEventListener("click", () => {
     const nid = Number(b.dataset.nModif), n = NOTES.find(x => x.id === nid), li = pop.querySelector(`[data-note="${nid}"]`);
     if (!n || !li) return;
-    const zone = li.querySelector(".n-texte");
+    const zone = li.querySelector(".n-texte"), act = li.querySelector(".n-actions");
+    if (act) act.style.visibility = "hidden";   // pendant l'édition, plus de « modifier » / « supprimer » sur cette note
     zone.innerHTML = `<textarea rows="3" class="n-edit">${esc(n.Texte || "")}</textarea>
       <span class="pop-btns"><button class="btn petit" data-n-save>Enregistrer</button><button class="btn petit gris" data-n-annul>Annuler</button></span>`;
     const ta = zone.querySelector("textarea"); if (ta) ta.focus();
