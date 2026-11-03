@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="commun.css"><style>body{width:auto;max-width:560px}</style></head>
+<body>
+<h1>Réglages — Suivi référencements apprentissage</h1>
+<label for="doc">Adresse du document Grist</label>
+<input id="doc" placeholder="https://grist.numerique.gouv.fr/o/docs/…/Suivi-referencements-apprentissage">
+<div class="aide">Ouvrez le document dans votre navigateur et copiez l'adresse affichée en haut.</div>
+<label for="cle">Clé d'accès Grist (personnelle)</label>
+<input id="cle" type="password" placeholder="clé de 40 caractères">
+<div class="aide">Dans Grist : cliquez sur votre profil (en haut à droite) → <b>Paramètres du profil</b> → <b>Clé API</b> → Créer, puis copiez-la ici. Ne la partagez pas.</div>
+<details style="margin-top:10px"><summary class="aide">Serveur Grist (à ne changer que si besoin)</summary>
+<input id="serveur" placeholder="https://grist.numerique.gouv.fr"></details>
+<button class="btn" id="enregistrer">Enregistrer et tester</button>
+<div id="resultat"></div>
+<script src="grist.js"></script>
+<script src="options.js"></script>
+</body></html>

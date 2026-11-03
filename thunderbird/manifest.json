@@ -1,0 +1,19 @@
+{
+  "manifest_version": 2,
+  "name": "Suivi référencements apprentissage",
+  "description": "Ajoute la demande de référencement du mail ouvert au suivi Grist du SAIO.",
+  "version": "1.0",
+  "author": "SAIO Bordeaux",
+  "browser_specific_settings": {
+    "gecko": { "id": "suivi-apprentissage@saio-bordeaux", "strict_min_version": "102.0" }
+  },
+  "permissions": ["messagesRead", "storage", "https://*/*", "http://localhost/*"],
+  "message_display_action": {
+    "default_title": "Ajouter au suivi",
+    "default_label": "Ajouter au suivi",
+    "default_popup": "popup.html",
+    "default_icon": "icone.svg"
+  },
+  "options_ui": { "page": "options.html", "open_in_tab": false },
+  "icons": { "64": "icone.svg" }
+}
