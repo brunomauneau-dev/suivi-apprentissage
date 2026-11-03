@@ -162,7 +162,7 @@ async function rapprocherAuto() {
   RAPPRO_FAIT = true;
   const ids = [], cles = [];
   for (const r of ROWS) {
-    if (r.Cle_carif || !estHistorique(r)) continue;
+    if ((r.Cle_carif && r.Cle_carif !== "ABSENTE") || !estHistorique(r)) continue;
     const { liste, sur } = candidatsHistorique(r);
     if (sur) { ids.push(r.id); cles.push(liste[0].c.Cle_ME); }
   }
@@ -176,7 +176,7 @@ async function rapprocherAuto() {
 
 function analyser(r, maintenant) {
   const fiche = ficheDe(r);
-  const cat = r.Cle_carif ? catalogueLie(r) : trouverCatalogue(fiche);
+  const cat = r.Cle_carif && r.Cle_carif !== "ABSENTE" ? catalogueLie(r) : trouverCatalogue(fiche);
   const ficheDate = (fiche && fiche.Recu_le) || r.Fiche_recue;
   const etat = (s, t) => ({ s, t });
   const verif = v => v === "Conforme" ? etat("done") : v === "À corriger" ? etat("ko") : etat("todo");
@@ -185,7 +185,7 @@ function analyser(r, maintenant) {
     r.Lien_envoye ? etat("done", dateCourte(r.Lien_envoye)) : etat(ficheDate ? "done" : "todo"),
     ficheDate ? etat("done", dateCourte(ficheDate)) : etat("todo"),
     verif(r.UAI), verif(r.RNCP),
-    cat ? (problemesCarif(cat).length ? etat("ko") : etat("done")) : (r.Cle_carif === "ABSENTE" ? etat("ko") : etat("todo")),
+    cat ? (problemesCarif(cat).length ? etat("ko") : etat("done")) : (r.Cle_carif === "ABSENTE" && CATALOGUE.length ? etat("ko") : etat("todo")),
     r.Publiee === "Publiée" ? etat("done", dateCourte(r.Publiee_le)) : etat("todo"),
   ];
   const base = { e, fiche, cat };
