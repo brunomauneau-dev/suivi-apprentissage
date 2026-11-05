@@ -11,6 +11,16 @@ données : table *Fiches*, accès : **accès complet au document**.
 
 Hors de Grist, la page s'affiche en mode démonstration (données fictives).
 
+## Export PDF
+
+Le bouton « ⤓ PDF » (à côté de la recherche) télécharge le tableau de l'onglet affiché en A4 paysage,
+avec le filtre et la recherche en cours, regroupé par établissement :
+- *Nouvelles demandes* : les 7 étapes, la prochaine action et la dernière note ;
+- *Formations déjà ouvertes* : formation retrouvée dans l'export, diplôme, session de rentrée, statut, dernière note ;
+- *Contrôle d'affichage* : état, date du contrôle, critères, mail envoyé, commentaire.
+
+Bibliothèques jsPDF et jsPDF-AutoTable dans `lib/` (licence MIT), chargées au premier export seulement.
+
 ## Module Thunderbird « Ajouter au suivi »
 
 Dossier `thunderbird/` (paquet prêt à installer : `suivi-apprentissage-thunderbird.xpi`).
