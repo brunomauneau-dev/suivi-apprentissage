@@ -1181,6 +1181,8 @@ if (typeof window !== "undefined") {
     if (q) q.addEventListener("input", e => { recherche = e.target.value; rendre(); });
     const nouv = document.getElementById("nouveau");
     if (nouv) nouv.addEventListener("click", ev => { ev.stopPropagation(); ouvrirAjout(""); });
+    const pdf = document.getElementById("export-pdf");
+    if (pdf) pdf.addEventListener("click", ev => { ev.stopPropagation(); exporterPdf(); });
     const imp = document.getElementById("importer"), fic = document.getElementById("fichier-export");
     if (imp && fic) {
       imp.addEventListener("click", ev => { ev.stopPropagation(); importerDepuisCapMetiers(); });
