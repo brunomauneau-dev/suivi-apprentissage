@@ -948,7 +948,7 @@ function voirFiche(id) {
   const controles = [
     ["SIRET valide", siretValide(fi.Siret)],
     ["UAI lieu valide", uaiValide(fi.UAI_lieu)], ...(fi.UAI_formateur ? [["UAI formateur valide", uaiValide(fi.UAI_formateur)]] : []),
-    ["UAI gestionnaire valide", uaiValide(fi.UAI_gestionnaire)],
+    ...(fi.UAI_gestionnaire ? [["UAI du siège valide", uaiValide(fi.UAI_gestionnaire)]] : []),
     ["Code postal dans l'académie (24, 33, 40, 47, 64)", ["24", "33", "40", "47", "64"].includes(String(fi.Code_postal || "").slice(0, 2))],
     ["Certifié Qualiopi (avec n°)", (fi.Certification || []).includes("Qualiopi") && !!fi.Num_Qualiopi],
     ["Référencée Carif-Oref (déclaré)", fi.Referencee_Carif_Oref === "Oui"],
@@ -976,7 +976,7 @@ function voirFiche(id) {
       <div><h3>Formation</h3>${champ("Libellé", fi.Libelle_formation)}${champ("Référencée Carif-Oref", fi.Referencee_Carif_Oref)}
         ${champ("Statut", fi.Statut)}${champ("Nombre de places", fi.Places_mixite)}${champ("Durée", fi.Duree)}${champ("Précision durée", fi.Duree_precision)}
         ${champ("Code diplôme", fi.Code_diplome)}${champ("Code RNCP", fi.Code_RNCP)}</div>
-      <div><h3>Lieu et UAI</h3>${champ("UAI lieu", fi.UAI_lieu)}${fi.UAI_formateur ? champ("UAI formateur", fi.UAI_formateur) : ""}${champ("UAI gestionnaire", fi.UAI_gestionnaire)}
+      <div><h3>Lieu et UAI</h3>${champ("UAI du lieu de formation", fi.UAI_lieu)}${fi.UAI_formateur ? champ("UAI formateur", fi.UAI_formateur) : ""}${fi.UAI_gestionnaire ? champ("UAI du siège", fi.UAI_gestionnaire) : ""}
         ${champ("Adresse", fi.Lieu_adresse)}${champ("Commune", fi.Commune)}${champ("Code postal", fi.Code_postal)}${champ("Signataire", fi.Signataire)}${"Fonction_signataire" in fi ? champ("Fonction", fi.Fonction_signataire) : ""}</div>
     </div>
     <h3>Contrôles automatiques</h3><ul class="controles">${controles.map(([l, b]) => `<li>${ok(b)} ${esc(l)}</li>`).join("")}</ul>
