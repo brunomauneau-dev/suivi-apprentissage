@@ -947,7 +947,7 @@ function voirFiche(id) {
   const ok = b => b ? `<span class="ok">✓</span>` : `<span class="ko">✗</span>`;
   const controles = [
     ["SIRET valide", siretValide(fi.Siret)],
-    ["UAI lieu valide", uaiValide(fi.UAI_lieu)], ["UAI formateur valide", uaiValide(fi.UAI_formateur)],
+    ["UAI lieu valide", uaiValide(fi.UAI_lieu)], ...(fi.UAI_formateur ? [["UAI formateur valide", uaiValide(fi.UAI_formateur)]] : []),
     ["UAI gestionnaire valide", uaiValide(fi.UAI_gestionnaire)],
     ["Code postal dans l'académie (24, 33, 40, 47, 64)", ["24", "33", "40", "47", "64"].includes(String(fi.Code_postal || "").slice(0, 2))],
     ["Certifié Qualiopi (avec n°)", (fi.Certification || []).includes("Qualiopi") && !!fi.Num_Qualiopi],
@@ -957,7 +957,9 @@ function voirFiche(id) {
   ];
   const comp = c ? [
     ["SIRET", fi.Siret, c.Siret_formateur + (c._sg !== c._sf ? " / gest. " + c.Siret_gestionnaire : ""), [c._sf, c._sg].includes(chiffres(fi.Siret).padStart(14, "0"))],
-    ["UAI formateur", fi.UAI_formateur, c.UAI_validee, code(fi.UAI_formateur) === c._uai],
+    // l'UAI formateur (InserJeunes) n'est plus demandé : on compare tous les UAI saisis à l'UAI validé de l'export
+    ["UAI", [fi.UAI_lieu, fi.UAI_gestionnaire, fi.UAI_formateur].map(code).filter(Boolean).filter((u, i, t) => t.indexOf(u) === i).join(" / "), c.UAI_validee,
+      [fi.UAI_lieu, fi.UAI_gestionnaire, fi.UAI_formateur].map(code).includes(c._uai)],
     ["Code RNCP", fi.Code_RNCP, c.Code_RNCP, chiffres(fi.Code_RNCP) === c._rncp],
     ["Code diplôme", fi.Code_diplome, c.Code_scolarite, code(fi.Code_diplome).padStart(8, "0") === c._cfd],
     ["Code postal", fi.Code_postal, c.CP, String(fi.Code_postal || "").slice(0, 5) === String(c.CP || "").slice(0, 5)],
@@ -969,12 +971,12 @@ function voirFiche(id) {
   pop.innerHTML = `<div class="fiche-tete"><b>Fiche de renseignement — ${esc(r.Formation)}</b><button class="btn gris petit" id="pop-fermer">Fermer</button></div>
     <p class="rien">${esc(fi.Organisme)} · reçue le ${fi.Recu_le ? new Date(fi.Recu_le * 1000).toLocaleString("fr-FR") : "?"} · code ${esc(fi.Code)}</p>
     <div class="fiche-grille">
-      <div><h3>Organisme</h3>${champ("Nom", fi.Organisme)}${champ("Appellation", fi.Appellation)}${champ("SIRET", fi.Siret)}
+      <div><h3>Organisme</h3>${champ("Nom", fi.Organisme)}${fi.Appellation ? champ("Appellation", fi.Appellation) : ""}${champ("SIRET", fi.Siret)}
         ${champ("Certification", fi.Certification)}${champ("N° Qualiopi", fi.Num_Qualiopi)}${champ("Autre certification", fi.Certification_autre)}</div>
       <div><h3>Formation</h3>${champ("Libellé", fi.Libelle_formation)}${champ("Référencée Carif-Oref", fi.Referencee_Carif_Oref)}
-        ${champ("Statut", fi.Statut)}${champ("Places (mixité)", fi.Places_mixite)}${champ("Durée", fi.Duree)}${champ("Précision durée", fi.Duree_precision)}
+        ${champ("Statut", fi.Statut)}${champ("Nombre de places", fi.Places_mixite)}${champ("Durée", fi.Duree)}${champ("Précision durée", fi.Duree_precision)}
         ${champ("Code diplôme", fi.Code_diplome)}${champ("Code RNCP", fi.Code_RNCP)}</div>
-      <div><h3>Lieu et UAI</h3>${champ("UAI lieu", fi.UAI_lieu)}${champ("UAI formateur", fi.UAI_formateur)}${champ("UAI gestionnaire", fi.UAI_gestionnaire)}
+      <div><h3>Lieu et UAI</h3>${champ("UAI lieu", fi.UAI_lieu)}${fi.UAI_formateur ? champ("UAI formateur", fi.UAI_formateur) : ""}${champ("UAI gestionnaire", fi.UAI_gestionnaire)}
         ${champ("Adresse", fi.Lieu_adresse)}${champ("Commune", fi.Commune)}${champ("Code postal", fi.Code_postal)}${champ("Signataire", fi.Signataire)}${"Fonction_signataire" in fi ? champ("Fonction", fi.Fonction_signataire) : ""}</div>
     </div>
     <h3>Contrôles automatiques</h3><ul class="controles">${controles.map(([l, b]) => `<li>${ok(b)} ${esc(l)}</li>`).join("")}</ul>
@@ -985,7 +987,7 @@ function voirFiche(id) {
       : `<p class="rien">${CATALOGUE.length ? "Formation non trouvée dans l'export : vérifier les codes (SIRET, UAI, RNCP, code diplôme) ou la déclaration au Carif-Oref." : "Aucun export Carif-Oref importé."}</p>`}
     <h3>Ma vérification</h3>
     <p class="rien">${c ? "UAI et RNCP sont cochés automatiquement à partir de l'export Carif-Oref ; cliquez ci-dessous seulement pour modifier." : "Formation non retrouvée dans l'export : vérification manuelle."}
-      ${fi.UAI_formateur || fi.UAI_lieu ? `<button class="btn-lien" id="acce">Vérifier l'UAI ${esc(code(fi.UAI_formateur || fi.UAI_lieu))} dans ACCE ↗</button>` : ""}</p>
+      ${fi.UAI_lieu || fi.UAI_formateur ? `<button class="btn-lien" id="acce">Vérifier l'UAI ${esc(code(fi.UAI_lieu || fi.UAI_formateur))} dans ACCE ↗</button>` : ""}</p>
     <div class="pop-btns">
       <button class="btn ${r.UAI === "Conforme" ? "vert" : "gris"}" data-v="UAI|Conforme">UAI conforme</button>
       <button class="btn ${r.UAI === "À corriger" ? "rouge" : "gris"}" data-v="UAI|À corriger">UAI à corriger</button>
@@ -996,7 +998,7 @@ function voirFiche(id) {
   const fer = document.getElementById("pop-fermer"); if (fer) fer.addEventListener("click", fermerPop);
   const ba = document.getElementById("acce");
   if (ba) ba.addEventListener("click", async () => {
-    const u = code(fi.UAI_formateur || fi.UAI_lieu);
+    const u = code(fi.UAI_lieu || fi.UAI_formateur);
     try { await navigator.clipboard.writeText(u); ba.textContent = `UAI ${u} copié : collez-le (Ctrl+V) dans la recherche ACCE ↗`; }
     catch (e) { ba.textContent = `Recherchez ${u} dans ACCE ↗`; }
     window.open("https://acce.depp.education.fr/acce_public/", "_blank", "noopener");
