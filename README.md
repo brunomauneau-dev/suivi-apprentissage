@@ -27,3 +27,7 @@ Dossier `thunderbird/` (paquet prêt à installer : `suivi-apprentissage-thunder
 Sur un mail ouvert, le bouton « Ajouter au suivi » lit l'expéditeur, la date, la signature et les formations citées,
 puis ajoute les formations dans la table `Suivi` du document Grist (API, clé personnelle saisie dans les réglages du module).
 Installation : Thunderbird → Modules et thèmes → roue dentée → « Installer un module depuis un fichier… » → le fichier .xpi.
+
+## À faire
+
+- Formulaire de fiche : ajouter dans le libellé de la case « Je certifie avoir pris connaissance de la charte Parcoursup » un lien vers la charte 2027, dès sa publication.
