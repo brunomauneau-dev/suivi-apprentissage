@@ -11,6 +11,7 @@ function rentreeCible() { const d = new Date(); return d.getMonth() >= 8 ? d.get
 // Une session « de rentrée » doit démarrer en début d'année scolaire : entre ces deux dates de l'année cible (mois 1 à 12)
 const RENTREE_DU = [6, 1], RENTREE_AU = [12, 31];
 function fenetreRentree() { const a = rentreeCible(); return [Date.UTC(a, RENTREE_DU[0] - 1, RENTREE_DU[1]), Date.UTC(a, RENTREE_AU[0] - 1, RENTREE_AU[1])]; }
+const dateFiche = t => t ? new Date(t * 1000).toLocaleDateString("fr-FR", { timeZone: "UTC" }) : "";
 function texteFenetre() { const [d, f] = fenetreRentree(), x = t => new Date(t).toLocaleDateString("fr-FR", { timeZone: "UTC" }); return `entre le ${x(d)} et le ${x(f)}`; }
 function debutsSessions(c) {
   return String((c && c.Debuts_sessions) || "").split(/[,;\s]+/).map(t => /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t)).filter(Boolean)
@@ -954,6 +955,8 @@ function voirFiche(id) {
     ["Référencée Carif-Oref (déclaré)", fi.Referencee_Carif_Oref === "Oui"],
     ["Attestation cochée", !!fi.Attestation],
     ...("Charte" in fi ? [["Charte Parcoursup lue (case cochée)", !!fi.Charte]] : []),
+    ...(fi.Date_debut ? [[`Début de formation ${texteFenetre()}`, fi.Date_debut * 1000 >= fenetreRentree()[0] && fi.Date_debut * 1000 <= fenetreRentree()[1]]] : []),
+    ...(fi.Date_debut && fi.Date_fin ? [["Date de fin après la date de début", fi.Date_fin > fi.Date_debut]] : []),
     ...("Fonction_signataire" in fi ? [["Signée par le chef d'établissement", /chef/i.test(String(fi.Fonction_signataire || ""))]] : []),
   ];
   const comp = c ? [
@@ -975,7 +978,7 @@ function voirFiche(id) {
       <div><h3>Organisme</h3>${champ("Nom", fi.Organisme)}${fi.Appellation ? champ("Appellation", fi.Appellation) : ""}${champ("SIRET", fi.Siret)}
         ${champ("Certification", fi.Certification)}${champ("N° Qualiopi", fi.Num_Qualiopi)}${champ("Autre certification", fi.Certification_autre)}</div>
       <div><h3>Formation</h3>${champ("Libellé", fi.Libelle_formation)}${champ("Référencée Carif-Oref", fi.Referencee_Carif_Oref)}
-        ${champ("Statut", fi.Statut)}${champ("Nombre de places", fi.Places_mixite)}${champ("Durée", fi.Duree)}${champ("Précision durée", fi.Duree_precision)}
+        ${champ("Statut", fi.Statut)}${champ("Nombre de places", fi.Places_mixite)}${champ("Durée", fi.Duree)}${champ("Précision durée", fi.Duree_precision)}${"Date_debut" in fi ? champ("Début", dateFiche(fi.Date_debut)) + champ("Fin", dateFiche(fi.Date_fin)) : ""}
         ${champ("Code diplôme", fi.Code_diplome)}${champ("Code RNCP", fi.Code_RNCP)}</div>
       <div><h3>Lieu et UAI</h3>${champ("UAI du lieu de formation", fi.UAI_lieu)}${fi.UAI_formateur ? champ("UAI formateur", fi.UAI_formateur) : ""}${fi.UAI_gestionnaire ? champ("UAI du siège", fi.UAI_gestionnaire) : ""}
         ${champ("Adresse", fi.Lieu_adresse)}${champ("Commune", fi.Commune)}${champ("Code postal", fi.Code_postal)}${champ("Demandeur (nom, tél., fonction)", fi.Signataire)}${"Fonction_signataire" in fi ? champ("Fonction", fi.Fonction_signataire) : ""}</div>
