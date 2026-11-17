@@ -24,6 +24,15 @@ Dans les trois onglets, un bandeau « Vigilance » sous l'établissement liste s
 
 Bibliothèques jsPDF et jsPDF-AutoTable dans `lib/` (licence MIT), chargées au premier export seulement.
 
+## Demande d'une formation déjà ouverte
+
+Une nouvelle demande dont l'intitulé correspond à une formation du même établissement dans l'onglet « Formations déjà ouvertes »
+(tous les mots utiles de l'intitulé demandé s'y retrouvent ; « BTS », « Titre professionnel », « Bac +2 »… sont ignorés)
+passe en « À faire au SAIO — Vérifier : déjà ouverte l'an dernier », tant que la fiche n'est pas reçue.
+Sous son nom : le n° Parcoursup de la formation ouverte, « voir », « supprimer la demande » ou « ce n'est pas la même »
+(colonne Suivi.Deja_ouverte = NON, créée automatiquement). La fiche n'est pas proposée à l'envoi par mail pour ces demandes.
+La fenêtre « + Nouvelle demande » le signale aussi pendant la saisie.
+
 ## Lignes de l'export
 
 Dans la fenêtre « Retrouver dans l'export Carif-Oref », le lien « Lignes de l'export ▸ » sous chaque formation affiche

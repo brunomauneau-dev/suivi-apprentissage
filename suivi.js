@@ -132,6 +132,24 @@ const memeNomColle = (nom, c) => { const n = colle(nom); return n.length >= 4 &&
 const part = (a, b) => { if (!a.size) return 0; let n = 0; for (const t of a) if (b.has(t)) n++; return n / a.size; };
 const estHistorique = r => !!(r.Origine && !r.Mail_recu && !ficheDe(r));
 
+// Nouvelle demande d'une formation déjà ouverte pour le même établissement (onglet « Formations déjà ouvertes ») :
+// même établissement (nom collé, l'un contenant l'autre) et tous les mots utiles de l'intitulé demandé dans l'intitulé ouvert.
+// Signalée tant que la fiche n'est pas reçue, sauf si le SAIO a indiqué « ce n'est pas la même » (Suivi.Deja_ouverte = « NON »).
+const titreSansSite = t => String(t || "").replace(/\(([^)]*)\)\s*(- en apprentissage)?\s*$/i, "");
+let HIST = { cle: null, liste: [] };
+function formationsOuvertes() {
+  const cle = [ROWS, ROWS.length, FICHES, FICHES.length];
+  if (!HIST.cle || HIST.cle.some((v, i) => v !== cle[i]))
+    HIST = { cle, liste: ROWS.filter(estHistorique).map(h => ({ h, etab: colle(h.Etablissement), t: jetons(titreSansSite(h.Formation)) })) };
+  return HIST.liste;
+}
+function dejaOuvertes(etab, formation) {
+  const e = colle(etab), q = jetons(titreSansSite(formation));
+  if (e.length < 4 || !q.size) return [];
+  return formationsOuvertes().filter(x => x.etab.length >= 4 && (x.etab.includes(e) || e.includes(x.etab)) && part(q, x.t) === 1 && part(x.t, q) >= 0.5).map(x => x.h);
+}
+const doublonDe = r => r.Deja_ouverte === "NON" || r.Publiee === "Publiée" || estHistorique(r) ? [] : dejaOuvertes(r.Etablissement, r.Formation);
+
 function catalogueLie(r) {
   if (!r.Cle_carif || r.Cle_carif === "ABSENTE") return null;
   return CATALOGUE.find(c => c.Cle_ME === r.Cle_carif) || null;
@@ -243,6 +261,10 @@ function analyser(r, maintenant) {
       e[4].s === "ko" ? "RNCP à corriger" + (!r.RNCP && auto.rncpAttendu ? " (attendu : " + auto.rncpAttendu + ")" : "") : ""].filter(Boolean);
     const court = [e[3].s === "ko" ? "UAI" : "", e[4].s === "ko" ? "RNCP" : ""].filter(Boolean).join(" et ") + " à corriger";
     return { ...base, cat_: "attente", depuis: ficheJ, motif: court, next: { cls: "wait", titre: ATT, txt: parts.join(" · ") } };
+  }
+  if (!ficheDate) {
+    const doublon = doublonDe(r);
+    if (doublon.length) return { ...base, doublon, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Vérifier : déjà ouverte l'an dernier" } };
   }
   if (!r.Lien_envoye && !ficheDate) return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Envoyer le lien de la fiche" } };
   if (!ficheDate) {
@@ -416,8 +438,8 @@ function rendre() {
       const tags = [sai ? `<span class="tag warn">${sai} à faire SAIO</span>` : "",
         att ? `<span class="tag wait">${att} en attente</span>` : "", fin ? `<span class="tag ok">${fin} publiée${pl(fin)}</span>` : ""].join("");
       const ouvert = ouverts.has(g.cle) || !!q;
-      const aEnvoyer = toutesG.filter(f => !f.r.Lien_envoye && !f.fiche && f.cat_ !== "publie").length;
-      const aRenvoyer = toutesG.filter(f => !f.fiche && f.cat_ !== "publie").length;
+      const aEnvoyer = toutesG.filter(f => !f.r.Lien_envoye && !f.fiche && f.cat_ !== "publie" && !f.doublon).length;
+      const aRenvoyer = toutesG.filter(f => !f.fiche && f.cat_ !== "publie" && !f.doublon).length;
       return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
         <div class="etab-head ligne"><span class="chev">▶</span>
           <div class="etab-name"><b>${esc(g.nom)}</b><span class="meta">${tot} formation${pl(tot)}</span><span class="contact">${contactHtml(contactDe(g.nom), "")}</span></div>
@@ -535,9 +557,18 @@ function ligneFormation(f) {
   const boutons = [f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
     f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : ""].join(" ");
   return `<tr class="ligne-f" data-id="${r.id}">
-    <td class="f-nom"><div class="f-tete"><b>${esc(r.Formation || "(sans intitulé)")}</b>${boutonMenuF(r, true)}${lienAjoutNote(r)}</div>${sous.length ? `<small>${sous.join(" · ")}</small>` : ""}${noteFermeture(r)}${resumeNotes(r)}</td>
+    <td class="f-nom"><div class="f-tete"><b>${esc(r.Formation || "(sans intitulé)")}</b>${boutonMenuF(r, true)}${lienAjoutNote(r)}</div>${sous.length ? `<small>${sous.join(" · ")}</small>` : ""}${ligneDoublon(f)}${noteFermeture(r)}${resumeNotes(r)}</td>
     ${cases}
     <td class="action ${couleur}"><b>${esc(titre)}</b><span>${esc(f.next.txt)}</span>${boutons.trim() ? `<div>${boutons}</div>` : ""}</td></tr>`;
+}
+
+// Demande d'une formation déjà ouverte : laquelle, et les deux suites possibles
+function ligneDoublon(f) {
+  if (!f.doublon || !f.doublon.length) return "";
+  const h = f.doublon[0];
+  return `<div class="doublon-ligne" title="Déjà ouverte : ${esc(h.Formation)}">Déjà ouverte${h.g_ta_cod ? " (n° " + esc(h.g_ta_cod) + ")" : ""} :
+    <button class="btn-lien" data-voir-ouverte="${esc(h.Etablissement)}">voir</button> · <button class="btn-lien" data-suppr-doublon="${f.r.id}">supprimer la demande</button>
+    · <button class="btn-lien gris" data-pas-doublon="${f.r.id}">ce n'est pas la même</button></div>`;
 }
 
 // Onglet « Formations ouvertes » : ce qui compte pour la nouvelle campagne
@@ -648,6 +679,14 @@ function brancher(zone) {
   zone.querySelectorAll("[data-mail]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); preparerMail(b.dataset.mail, null, b); }));
   zone.querySelectorAll("[data-fiche]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); voirFiche(Number(b.dataset.fiche)); }));
   zone.querySelectorAll("[data-rappro]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); rapprocher(Number(b.dataset.rappro)); }));
+  zone.querySelectorAll("[data-suppr-doublon]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); supprimerFormation(Number(b.dataset.supprDoublon)); }));
+  zone.querySelectorAll("[data-pas-doublon]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); maj(Number(b.dataset.pasDoublon), { Deja_ouverte: "NON" }); }));
+  zone.querySelectorAll("[data-voir-ouverte]").forEach(b => b.addEventListener("click", ev => {
+    ev.stopPropagation();
+    onglet = "ouvertes"; filtre = "tous"; recherche = b.dataset.voirOuverte;
+    const q = document.getElementById("q"); if (q) q.value = recherche;
+    rendre();
+  }));
   zone.querySelectorAll("[data-fermetures]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); ouvrirFermetures(b.dataset.fermetures, b); }));
 }
 
@@ -821,6 +860,7 @@ function ouvrirAjout(etab) {
     <div class="ferm-ligne" id="aj-ferm" hidden></div>
     <datalist id="aj-liste">${noms.map(n => `<option value="${esc(n)}">`).join("")}</datalist>
     <label>Formations demandées <small>(une par ligne)</small><textarea id="aj-forms" rows="4" placeholder="BTS NDRC&#10;BTS MCO"></textarea></label>
+    <div class="doublon-ligne" id="aj-doublon" hidden></div>
     <label>Lieu / campus <small>(facultatif)</small><input id="aj-lieu"></label>
     <label>Mail reçu le <input type="date" id="aj-date" value="${versInput(aujourdhui())}"></label>
     <fieldset class="contact-saisie"><legend>Contact de l'établissement <small>(repris automatiquement s'il est déjà connu)</small></legend>
@@ -844,8 +884,17 @@ function ouvrirAjout(etab) {
     const t = avertissementFermetures(el.value);
     z.textContent = t; z.hidden = !t;
   };
+  // formations saisies déjà ouvertes pour cet établissement
+  const avertDoublon = () => {
+    const el = document.getElementById("aj-etab"), fo = document.getElementById("aj-forms"), z = document.getElementById("aj-doublon");
+    if (!el || !fo || !z) return;
+    const deja = fo.value.split(/\n|;/).map(x => x.trim()).filter(Boolean).filter(x => dejaOuvertes(el.value, x).length);
+    z.textContent = deja.length ? `Déjà ouverte${deja.length > 1 ? "s" : ""} pour cet établissement (onglet « Formations déjà ouvertes ») : ${deja.join(" · ")}` : "";
+    z.hidden = !deja.length;
+  };
   avert();
-  const etEl = document.getElementById("aj-etab"); if (etEl) { etEl.addEventListener("change", remplirContact); etEl.addEventListener("input", avert); }
+  const etEl = document.getElementById("aj-etab"); if (etEl) { etEl.addEventListener("change", remplirContact); etEl.addEventListener("input", avert); etEl.addEventListener("input", avertDoublon); }
+  const foEl = document.getElementById("aj-forms"); if (foEl) foEl.addEventListener("input", avertDoublon);
   const annul = document.getElementById("aj-annul"); if (annul) annul.addEventListener("click", fermerPop);
   const ok = document.getElementById("aj-ok");
   if (ok) ok.addEventListener("click", async () => {
@@ -901,7 +950,7 @@ function editerContact(etab, ancre) {
 // Prépare dans la messagerie (Thunderbird…) le mail avec les liens des fiches, puis coche « Lien envoyé »
 function preparerMail(etab, idsChoisis, ancre) {
   const k = norm(etab);
-  const candidats = ROWS.filter(r => norm(r.Etablissement) === k && !ficheDe(r) && !(r.Origine && !r.Mail_recu) && r.Publiee !== "Publiée");
+  const candidats = ROWS.filter(r => norm(r.Etablissement) === k && !ficheDe(r) && !(r.Origine && !r.Mail_recu) && r.Publiee !== "Publiée" && !doublonDe(r).length);
   const jamais = candidats.filter(r => !r.Lien_envoye);
   const choisis = new Set(idsChoisis && idsChoisis.length ? idsChoisis : (jamais.length ? jamais : candidats).map(r => r.id));
   const email = contactDe(etab).email;
@@ -1256,7 +1305,8 @@ async function charger() {
     const nt = await preparerNotes(nt0).catch(() => null);
     if (!s) throw new Error("table « Suivi » introuvable ou accès refusé");
     const manquantes = [["Contact_nom", "Contact (nom)"], ["Contact_tel", "Contact (téléphone)"], ["Contact_email", "Contact (mail)"],
-      ["Motif_UAI", "Correction UAI demandée"], ["Motif_RNCP", "Correction RNCP demandée"], ["Cle_carif", "Formation de l'export (clé)"], ["Lien_site", "Site de la formation"]]
+      ["Motif_UAI", "Correction UAI demandée"], ["Motif_RNCP", "Correction RNCP demandée"], ["Cle_carif", "Formation de l'export (clé)"], ["Lien_site", "Site de la formation"],
+      ["Deja_ouverte", "Déjà ouverte : NON = ce n'est pas la même"]]
       .filter(([c]) => !(c in s));
     if (manquantes.length) {
       await grist.docApi.applyUserActions(manquantes.map(([c, l]) => ["AddColumn", "Suivi", c, { type: "Text", label: l, isFormula: false }]));
@@ -1299,6 +1349,7 @@ function demo() {
     // exemple à montrer : établissement dont une formation a été fermée sur Parcoursup l'an dernier, qui demande une nouvelle ouverture
     { id: 6, Code: "F-0006", Etablissement: "CFA EXEMPLE DES METIERS", Contact_nom: "M. Durand, directeur", Contact_tel: "05 57 00 00 00", Contact_email: "contact@cfa-exemple.fr",
       Formation: "BTS Gestion des transports et logistique associée - en apprentissage", Lieu: "CFA Exemple Mérignac", Mail_recu: j("03/11"), Lien_envoye: j("04/11") },
+    { id: 7, Code: "F-0007", Etablissement: "TALIS", Formation: "BTS Communication - en apprentissage", Lieu: "TALIS Bordeaux", Publiee: "Publiée", Origine: "Tableau initial", g_ta_cod: "34501" },
     { id: 5, Code: "F-0005", Etablissement: "PIGIER", Formation: "BTS GPME - en apprentissage", Lieu: "PIGIER BORDEAUX (33)", Publiee: "Publiée", Origine: "Tableau initial", g_ta_cod: "34388" },
   ];
   FICHES = [
