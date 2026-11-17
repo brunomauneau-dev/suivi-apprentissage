@@ -9,7 +9,7 @@
 <script src="controle.js?v=9" defer></script>
 <script src="notes.js?v=9" defer></script>
 <script src="pdf.js?v=1" defer></script>
-<script src="suivi.js?v=57" defer></script>
+<script src="suivi.js?v=58" defer></script>
 <style>
   :root {
     --bg: #f6f6f6; --card: #ffffff; --text: #1e1e1e; --muted: #666; --line: #e5e5e5;
@@ -137,6 +137,9 @@
   }
   .ligne-recherche { display: flex; gap: 6px; margin: 8px 0; } .ligne-recherche input { flex: 1; padding: 5px 8px; border: 1px solid #cfd5df; border-radius: 6px; font: inherit; }
   table.rappro td { vertical-align: top; } table.rappro tr.choisi td { background: #e3f4ea; }
+  .lignes-export { max-height: 360px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; margin: 4px 0 8px; background: var(--card); }
+  table.lignes { font-size: 12px; } table.lignes th { position: sticky; top: 0; background: var(--card); white-space: nowrap; }
+  table.lignes td.col { color: var(--muted, #666); white-space: nowrap; } table.lignes tr.diff td { background: #fff6dc; }
   /* onglets et listes (v19) */
   .onglets { display: flex; gap: 8px; margin: 16px 24px 0; flex-wrap: wrap; }
   .onglet { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 10px 18px; font: 600 15px inherit; cursor: pointer; color: var(--text); }

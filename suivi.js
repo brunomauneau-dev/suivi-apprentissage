@@ -774,7 +774,8 @@ function rapprocher(id, recherche) {
   }
   const ligne = c => {
     const pb = problemesCarif(c);
-    return `<tr class="${lie && lie.Cle_ME === c.Cle_ME ? "choisi" : ""}"><td><b>${esc(c.Libelle_formation)}</b><div class="rien">${esc(c.Formateur_RS)}${c.Gestionnaire_RS && c.Gestionnaire_RS !== c.Formateur_RS ? " · gest. " + esc(c.Gestionnaire_RS) : ""}</div></td>
+    return `<tr class="${lie && lie.Cle_ME === c.Cle_ME ? "choisi" : ""}"><td><b>${esc(c.Libelle_formation)}</b><div class="rien">${esc(c.Formateur_RS)}${c.Gestionnaire_RS && c.Gestionnaire_RS !== c.Formateur_RS ? " · gest. " + esc(c.Gestionnaire_RS) : ""}</div>
+      <button class="btn-lien" data-lignes="${esc(c.Cle_ME)}">Lignes de l'export ▸</button></td>
       <td>${esc(c.Ville)} ${esc(String(c.CP || "").slice(0, 2))}</td><td>${esc(c.UAI_validee)}</td><td>${esc(c.Statut_catalogue)}</td>
       <td>${pb.length ? '<span class="ko">✗</span> ' + esc(pb.map(x => /archiv/.test(x) ? "diplôme archivé" : "pas de session à la rentrée").join(" · ")) + `<div class="rien">${esc(texteRentree(c))}</div>` : '<span class="ok">✓</span> publiable'}</td>
       <td><button class="btn petit vert" data-choix="${esc(c.Cle_ME)}">C'est celle-ci</button></td></tr>`;
@@ -784,12 +785,13 @@ function rapprocher(id, recherche) {
     <p class="rien">${estHistorique(r) ? `Formation déjà ouverte sur Parcoursup${r.g_ta_cod ? ` (<a href="${esc(r.Lien_Parcoursup || "#")}" target="_blank" rel="noopener">fiche n° ${esc(r.g_ta_cod)}</a>)` : ""}`
       : "Formation non retrouvée automatiquement à partir de la fiche (SIRET, UAI, RNCP, code diplôme). Les formations du même organisme sont proposées en premier"} :
       indiquez une fois pour toutes la formation de l'export qui lui correspond (même site). Elle sera ensuite contrôlée à chaque import.</p>
-    ${lie ? `<p>Actuellement rapprochée de : <b>${esc(lie.Libelle_formation)}</b> — ${esc(lie.Formateur_RS)} (${esc(lie.Ville)})</p>` : ""}
+    ${lie ? `<p>Actuellement rapprochée de : <b>${esc(lie.Libelle_formation)}</b> — ${esc(lie.Formateur_RS)} (${esc(lie.Ville)}) <button class="btn-lien" data-lignes="${esc(lie.Cle_ME)}">Lignes de l'export ▸</button></p>` : ""}
     <div class="ligne-recherche"><input id="rappro-q" placeholder="Chercher dans l'export : organisme, ville, intitulé…" value="${esc(recherche || "")}">
       <button class="btn petit" id="rappro-chercher">Chercher</button></div>
     ${liste.length ? `<table class="comp rappro"><tr><th>Formation de l'export</th><th>Ville</th><th>UAI</th><th>Catalogue</th><th>Rentrée ${rentreeCible()}</th><th></th></tr>${liste.map(x => ligne(x.c)).join("")}</table>`
       : `<p class="rien">Aucune formation proposée : cherchez par nom d'organisme ou de ville.</p>`}
-    <div class="pop-btns"><button class="btn rouge" data-choix="ABSENTE">Elle n'est pas dans l'export</button>${r.Cle_carif ? `<button class="btn gris" data-choix="">Annuler le rapprochement</button>` : ""}</div>`;
+    <div class="pop-btns"><button class="btn rouge" data-choix="ABSENTE">Elle n'est pas dans l'export</button>${r.Cle_carif ? `<button class="btn gris" data-choix="">Annuler le rapprochement</button>` : ""}
+      ${liste.length ? `<button class="btn gris" id="rappro-xlsx">⤓ Lignes de l'export (.xlsx)</button>` : ""}</div>`;
   placer(pop, null);
   const fer = document.getElementById("pop-fermer"); if (fer) fer.addEventListener("click", fermerPop);
   const q = document.getElementById("rappro-q"), go = () => rapprocher(id, q ? q.value : "");
@@ -799,6 +801,14 @@ function rapprocher(id, recherche) {
     fermerPop();
     await maj(id, { Cle_carif: b.dataset.choix || null });
   }));
+  pop.querySelectorAll("[data-lignes]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); basculerLignes(b); }));
+  const bx = document.getElementById("rappro-xlsx");
+  if (bx) bx.addEventListener("click", async ev => {
+    ev.stopPropagation();
+    const cles = [...new Set([...(lie ? [lie.Cle_ME] : []), ...liste.map(x => x.c.Cle_ME)])];
+    try { await telechargerLignes(cles, `export-apprentissage-${String(r.Etablissement || "formation").replace(/[^\p{L}\p{N}]+/gu, "-")}.xlsx`); }
+    catch (e) { bx.textContent = "Échec : " + (e && e.message || e); }
+  });
 }
 
 function ouvrirAjout(etab) {
@@ -1040,12 +1050,17 @@ function dateExport(v) {
   return "";
 }
 
+// Clé d'une ligne de l'export : clé ministères éducatifs, sinon référence Carif
+function cleExport(l) {
+  const cle = texteCellule(l["CLE MINISTERES EDUCATIFS"]);
+  return cle.includes("#") ? cle : "CARIF-" + texteCellule(l["Ref_formation_Carif"]);
+}
+
 function preparerExport(lignesBrutes) {
   const best = new Map(), annees = new Map(), debuts = new Map();
   for (const l of lignesBrutes) {
     if (texteCellule(l["Académie"]) !== ACADEMIE) continue;
-    let cle = texteCellule(l["CLE MINISTERES EDUCATIFS"]);
-    if (!cle.includes("#")) cle = "CARIF-" + texteCellule(l["Ref_formation_Carif"]);
+    const cle = cleExport(l);
     const an = texteCellule(l["Annee_de_rentree"]);
     if (!annees.has(cle)) annees.set(cle, new Set());
     if (an) annees.get(cle).add(an);
@@ -1065,6 +1080,102 @@ function preparerExport(lignesBrutes) {
     o.Debuts_sessions = [...debuts.get(cle)].sort((a, b) => cleD(a).localeCompare(cleD(b))).join(", ");
     return o;
   });
+}
+
+// ------------------------------------------------------------------ lignes de l'export telles que dans le fichier Excel
+// Le catalogue ne garde qu'une ligne résumée par formation. Toutes les lignes de l'académie (une par session, toutes colonnes)
+// sont enregistrées à chaque import dans la table « Export_lignes » (une ligne par formation, lignes en JSON),
+// lue seulement à la demande (bouton « Lignes de l'export »), jamais au chargement du widget.
+const TABLE_LIGNES = "Export_lignes";
+let LIGNES_EXPORT = new Map();   // Cle_ME → [{ colonne: valeur }] déjà lues
+
+// Cellule de l'export en texte ; les dates (nombre Excel dans une colonne « Date… ») en jj/mm/aaaa
+function valeurBrute(col, v) {
+  if (typeof v === "number" && /date/i.test(col)) return dateExport(v) || texteCellule(v);
+  return texteCellule(v);
+}
+
+// Lignes de l'académie regroupées par formation, cellules vides retirées, colonnes dans l'ordre du fichier
+function lignesParCle(lignesBrutes) {
+  const m = new Map();
+  for (const l of lignesBrutes) {
+    if (texteCellule(l["Académie"]) !== ACADEMIE) continue;
+    const o = {};
+    for (const [k, v] of Object.entries(l)) { const t = valeurBrute(k, v); if (t !== "") o[k] = t; }
+    const cle = cleExport(l);
+    if (!m.has(cle)) m.set(cle, []);
+    m.get(cle).push(o);
+  }
+  return m;
+}
+
+// Remplace le contenu de la table Export_lignes (créée au premier import), par paquets d'environ 500 Ko
+async function enregistrerLignes(m, info) {
+  const tables = await grist.docApi.listTables();
+  const acts = tables.includes(TABLE_LIGNES) ? [["RemoveTable", TABLE_LIGNES]] : [];
+  acts.push(["AddTable", TABLE_LIGNES, [{ id: "Cle_ME", type: "Text" }, { id: "Lignes", type: "Text" }]]);
+  await actions(acts);
+  const e = [...m.entries()].map(([k, v]) => [k, JSON.stringify(v)]);
+  let i = 0;
+  while (i < e.length) {
+    const p = [];
+    for (let taille = 0; i < e.length && (!p.length || taille + e[i][1].length < 500000); i++) { p.push(e[i]); taille += e[i][1].length; }
+    info(`Enregistrement des lignes de l'export… ${i} / ${e.length}`);
+    await actions([["BulkAddRecord", TABLE_LIGNES, p.map(() => null), { Cle_ME: p.map(x => x[0]), Lignes: p.map(x => x[1]) }]]);
+  }
+}
+
+// Lignes des formations demandées (dans l'ordre des clés) : mémoire, sinon lecture filtrée de la table par l'API Grist
+async function lignesExport(cles) {
+  const manque = cles.filter(k => !LIGNES_EXPORT.has(k));
+  if (manque.length && !DEMO) {
+    const tk = await grist.docApi.getAccessToken({ readOnly: true });
+    const rep = await fetch(`${tk.baseUrl}/tables/${TABLE_LIGNES}/records?filter=${encodeURIComponent(JSON.stringify({ Cle_ME: manque }))}&auth=${encodeURIComponent(tk.token)}`);
+    if (rep.status === 404) throw new Error("les lignes ne sont pas encore enregistrées : importez l'export une fois de plus");
+    if (!rep.ok) throw new Error("lecture refusée (" + rep.status + ")");
+    for (const x of (await rep.json()).records) { try { LIGNES_EXPORT.set(x.fields.Cle_ME, JSON.parse(x.fields.Lignes || "[]")); } catch (e) { /* ligne illisible */ } }
+  }
+  for (const k of manque) if (!LIGNES_EXPORT.has(k)) LIGNES_EXPORT.set(k, []);
+  return cles.map(k => LIGNES_EXPORT.get(k));
+}
+
+// Lignes d'une formation, une colonne par ligne du fichier ; colonnes dont la valeur change d'une ligne à l'autre surlignées
+function tableLignes(lignes) {
+  if (!lignes.length) return `<p class="rien">Aucune ligne de l'export enregistrée pour cette formation : réimportez l'export.</p>`;
+  const cols = [...new Set(lignes.flatMap(Object.keys))];
+  const tete = (l, i) => `Ligne ${i + 1}` + (l.Date_debut ? ` · début ${esc(l.Date_debut)}` : l.Annee_de_rentree ? ` · rentrée ${esc(l.Annee_de_rentree)}` : "");
+  return `<div class="lignes-export"><table class="comp lignes"><tr><th>Colonne de l'export</th>${lignes.map((l, i) => `<th>${tete(l, i)}</th>`).join("")}</tr>
+    ${cols.map(k => `<tr class="${lignes.length > 1 && new Set(lignes.map(l => l[k] || "")).size > 1 ? "diff" : ""}"><td class="col">${esc(k)}</td>${lignes.map(l => `<td>${esc(l[k] || "")}</td>`).join("")}</tr>`).join("")}</table></div>`;
+}
+
+// Bouton « Lignes de l'export » : affiche ou masque les lignes sous la formation (ligne de tableau ou paragraphe)
+async function basculerLignes(bouton) {
+  const cle = bouton.dataset.lignes, hote = bouton.closest("tr") || bouton.closest("p");
+  if (!hote) return;
+  const suivant = hote.nextElementSibling;
+  if (suivant && suivant.dataset.lignesDe === cle) { suivant.remove(); bouton.textContent = "Lignes de l'export ▸"; return; }
+  const zone = document.createElement(hote.tagName === "TR" ? "tr" : "div");
+  zone.dataset.lignesDe = cle;
+  const remplir = html => { zone.innerHTML = hote.tagName === "TR" ? `<td colspan="${hote.children.length}">${html}</td>` : html; };
+  remplir(`<p class="rien">Lecture des lignes de l'export…</p>`);
+  hote.after(zone);
+  bouton.textContent = "Lignes de l'export ▾";
+  try { remplir(tableLignes((await lignesExport([cle]))[0])); }
+  catch (e) { remplir(`<p class="rien">Lignes indisponibles : ${esc(e && e.message || e)}</p>`); }
+}
+
+// Télécharge en .xlsx les lignes de l'export des formations proposées, avec les colonnes du fichier d'origine
+async function telechargerLignes(cles, nom) {
+  const ls = (await lignesExport(cles)).flat();
+  if (!ls.length) throw new Error("aucune ligne enregistrée : réimportez l'export");
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ls), "Export");
+  // lien de téléchargement fait main : celui de XLSX.writeFile remonte le clic jusqu'à la page, qui fermerait la fenêtre
+  const url = URL.createObjectURL(new Blob([XLSX.write(wb, { type: "array", bookType: "xlsx" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  const lien = Object.assign(document.createElement("a"), { href: url, download: nom });
+  lien.addEventListener("click", ev => ev.stopPropagation());
+  document.body.appendChild(lien); lien.click(); lien.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 // Page de partage CAP Métiers où l'export Apprentissage est toujours déposé (modifiable dans Paramètres : colonne URL_export)
@@ -1097,6 +1208,7 @@ async function importerExport(fichier, silencieux) {
     const rows = preparerExport(brut);
     if (!rows.length) { if (silencieux) return false; info("Aucune formation de l'académie de " + ACADEMIE + " dans ce fichier : est-ce bien l'export Apprentissage ?"); return false; }
     RAPPRO_FAIT = false;
+    LIGNES_EXPORT = lignesParCle(brut);
     if (DEMO) { CATALOGUE = rows; INDEX = null; await rapprocherAuto(); rendre(); return true; }
     info(`Import de ${rows.length} formations…`);
     const ids = CATALOGUE.map(c => c.id);
@@ -1108,6 +1220,8 @@ async function importerExport(fichier, silencieux) {
       info(`Import de ${rows.length} formations… ${Math.min(i + 500, rows.length)}`);
       await actions([["BulkAddRecord", "Catalogue", part.map(() => null), cols]]);
     }
+    try { await enregistrerLignes(LIGNES_EXPORT, info); }
+    catch (e) { console.warn("lignes de l'export non enregistrées", e); }   // le catalogue reste utilisable
     await charger();
     return true;
   } catch (e) {
@@ -1171,6 +1285,13 @@ function demo() {
     { Cle_ME: "x1", Statut_catalogue: "Publiée", Libelle_formation: "BTS Management Commercial Opérationnel", Formateur_RS: "TALIS BORDEAUX", Siret_formateur: "33851631300099", Siret_gestionnaire: "33851631300099", UAI_validee: "0333460G", Code_RNCP: "38362", Code_scolarite: "32031213", CP: "33000", Ville: "Bordeaux", Date_MAJ: "02/11/2026", Etat_diplome: "Diplôme en cours de validité", Annee_de_rentree: "2026, 2027", Debuts_sessions: "01/09/2026, 06/09/2027" },
     { Cle_ME: "x2", Statut_catalogue: "Publiée", Libelle_formation: "BTS Négociation et digitalisation de la relation client", Formateur_RS: "TALIS BORDEAUX", Siret_formateur: "33851631300099", Siret_gestionnaire: "33851631300099", UAI_validee: "0333460G", Code_RNCP: "38368", Code_scolarite: "32031212", CP: "33000", Ville: "Bordeaux", Date_MAJ: "02/11/2026", Etat_diplome: "Diplôme en état archivé", Annee_de_rentree: "2025, 2026", Debuts_sessions: "02/09/2025, 07/09/2026" },
   ];
+  // lignes de l'export fictives : une par session, avec les colonnes d'origine du fichier
+  const inverse = Object.fromEntries(Object.entries(COLS_EXPORT).map(([a, b]) => [b, a]));
+  LIGNES_EXPORT = new Map(CATALOGUE.map(c => [c.Cle_ME, debutsSessions(c).map(d => {
+    const o = { "Académie": ACADEMIE };
+    for (const [k, v] of Object.entries(c)) if (inverse[k] && k !== "Annee_de_rentree" && v) o[inverse[k]] = v;
+    return { ...o, Annee_de_rentree: d.txt.slice(6), Date_debut: d.txt, Date_fin: "30/06/" + (Number(d.txt.slice(6)) + 2), Duree: "24 mois", Rythme: "2 jours en centre / 3 jours en entreprise" };
+  })]));
   PARAM = { URL_formulaire: "https://exemple/forms/abc" };
   ROWS.forEach(r => { r.Lien_fiche = PARAM.URL_formulaire + "?Code=" + r.Code; });
   ROWS.filter(r => r.Publiee === "Publiée" || r.Origine).forEach(r => { r.Lien_site = r.Lien_site || "https://www.exemple-etablissement.fr/formations"; });
