@@ -818,6 +818,7 @@ function ouvrirAjout(etab) {
   const pop = nouvellePop("pop-large");
   pop.innerHTML = `<b>${etab ? "Ajouter des formations pour " + esc(etab) : "Nouvelle demande de référencement"}</b>
     <label>Établissement <input id="aj-etab" list="aj-liste" value="${esc(etab || "")}" placeholder="Nom de l'établissement"></label>
+    <div class="ferm-ligne" id="aj-ferm" hidden></div>
     <datalist id="aj-liste">${noms.map(n => `<option value="${esc(n)}">`).join("")}</datalist>
     <label>Formations demandées <small>(une par ligne)</small><textarea id="aj-forms" rows="4" placeholder="BTS NDRC&#10;BTS MCO"></textarea></label>
     <label>Lieu / campus <small>(facultatif)</small><input id="aj-lieu"></label>
@@ -836,7 +837,15 @@ function ouvrirAjout(etab) {
     }
   };
   remplirContact();
-  const etEl = document.getElementById("aj-etab"); if (etEl) etEl.addEventListener("change", remplirContact);
+  // avertissement « formations fermées sur Parcoursup », mis à jour pendant la saisie du nom
+  const avert = () => {
+    const el = document.getElementById("aj-etab"), z = document.getElementById("aj-ferm");
+    if (!el || !z) return;
+    const t = avertissementFermetures(el.value);
+    z.textContent = t; z.hidden = !t;
+  };
+  avert();
+  const etEl = document.getElementById("aj-etab"); if (etEl) { etEl.addEventListener("change", remplirContact); etEl.addEventListener("input", avert); }
   const annul = document.getElementById("aj-annul"); if (annul) annul.addEventListener("click", fermerPop);
   const ok = document.getElementById("aj-ok");
   if (ok) ok.addEventListener("click", async () => {
@@ -1258,6 +1267,10 @@ async function charger() {
       await grist.docApi.applyUserActions(manquantesC.map(k => ["AddColumn", "Catalogue", k, { type: "Text", label: k, isFormula: false }]));
       for (const k of manquantesC) c[k] = c.id.map(() => null);
     }
+    if (fe && !("Campagne" in fe)) {
+      await grist.docApi.applyUserActions([["AddColumn", TABLE_FERMETURES, "Campagne", { type: "Text", label: "Campagne", isFormula: false }]]);
+      fe.Campagne = fe.id.map(() => null);
+    }
     if (af && !("Mail_envoye_le" in af)) {
       await grist.docApi.applyUserActions([["AddColumn", "Affichage", "Mail_envoye_le", { type: "Date", label: "Mail envoyé le", isFormula: false }]]);
       af.Mail_envoye_le = af.id.map(() => null);
@@ -1283,13 +1296,21 @@ function demo() {
     { id: 2, Code: "F-0002", Etablissement: "TALIS", Formation: "BTS Communication", Lieu: "TALIS Bordeaux", Mail_recu: j("10/10"), Lien_envoye: j("12/10") },
     { id: 3, Code: "F-0003", Etablissement: "TALIS", Formation: "BTS NDRC", Lieu: "TALIS Bordeaux", Mail_recu: j("10/10"), Lien_envoye: j("12/10") },
     { id: 4, Code: "F-0004", Etablissement: "CAMPUS DU LAC", Formation: "BTS GPME", Mail_recu: j("29/10") },
+    // exemple à montrer : établissement dont une formation a été fermée sur Parcoursup l'an dernier, qui demande une nouvelle ouverture
+    { id: 6, Code: "F-0006", Etablissement: "CFA EXEMPLE DES METIERS", Contact_nom: "M. Durand, directeur", Contact_tel: "05 57 00 00 00", Contact_email: "contact@cfa-exemple.fr",
+      Formation: "BTS Gestion des transports et logistique associée - en apprentissage", Lieu: "CFA Exemple Mérignac", Mail_recu: j("03/11"), Lien_envoye: j("04/11") },
     { id: 5, Code: "F-0005", Etablissement: "PIGIER", Formation: "BTS GPME - en apprentissage", Lieu: "PIGIER BORDEAUX (33)", Publiee: "Publiée", Origine: "Tableau initial", g_ta_cod: "34388" },
   ];
   FICHES = [
+    { id: 3, Code: "F-0006", Organisme: "CFA EXEMPLE DES METIERS", Siret: "99999900000014", Libelle_formation: "BTS Gestion des transports et logistique associée", Code_RNCP: "RNCP00001", Code_diplome: "32031100",
+      UAI_lieu: "0339871A", UAI_gestionnaire: "0339871A", Code_postal: "33700", Commune: "Mérignac", Certification: ["L", "Qualiopi"], Num_Qualiopi: "Q-6", Referencee_Carif_Oref: "Oui",
+      Statut: "Groupe autonome", Duree: "2 ans", Attestation: true, Charte: true, Places_mixite: "15", Date_debut: Date.UTC(2027, 8, 13) / 1000, Date_fin: Date.UTC(2029, 5, 29) / 1000,
+      Signataire: "P. Durand, 05 57 00 00 00, directeur", Recu_le: j("12/11") },
     { id: 1, Code: "F-0001", Organisme: "TALIS", Siret: "33851631300099", Libelle_formation: "BTS MCO", Code_RNCP: "RNCP38362", Code_diplome: "32031213", UAI_lieu: "0333460G", UAI_formateur: "0333460G", UAI_gestionnaire: "0333460G", Code_postal: "33000", Commune: "Bordeaux", Certification: ["L", "Qualiopi"], Num_Qualiopi: "Q-1", Referencee_Carif_Oref: "Oui", Statut: "Groupe autonome", Duree: "2 ans", Attestation: true, Charte: true, Places_mixite: "24", Date_debut: Date.UTC(2027, 8, 6) / 1000, Date_fin: Date.UTC(2029, 5, 30) / 1000, Signataire: "S. Martin, 05 56 00 00 00, directrice", Recu_le: j("15/10") },
     { id: 2, Code: "F-0003", Organisme: "TALIS", Siret: "33851631300099", Libelle_formation: "BTS NDRC", Code_RNCP: "38368", Code_diplome: "32031212", UAI_lieu: "0333460G", UAI_formateur: "0333233K", UAI_gestionnaire: "0333460G", Code_postal: "33000", Commune: "Bordeaux", Certification: ["L", "Qualiopi"], Num_Qualiopi: "", Referencee_Carif_Oref: "Oui", Statut: "Groupe autonome", Duree: "2 ans", Attestation: true, Charte: false, Places_mixite: "12", Date_debut: Date.UTC(2027, 0, 11) / 1000, Date_fin: Date.UTC(2026, 11, 18) / 1000, Signataire: "S. Martin, 05 56 00 00 00, directrice", Recu_le: j("16/10") },
   ];
   CATALOGUE = [
+    { Cle_ME: "x3", Statut_catalogue: "Publiée", Libelle_formation: "BTS Gestion des transports et logistique associée", Formateur_RS: "CFA EXEMPLE DES METIERS", Siret_formateur: "99999900000014", Siret_gestionnaire: "99999900000014", UAI_validee: "0339871A", Code_RNCP: "00001", Code_scolarite: "32031100", CP: "33700", Ville: "Mérignac", Date_MAJ: "02/11/2026", Etat_diplome: "Diplôme en cours de validité", Annee_de_rentree: "2027", Debuts_sessions: "13/09/2027" },
     { Cle_ME: "x1", Statut_catalogue: "Publiée", Libelle_formation: "BTS Management Commercial Opérationnel", Formateur_RS: "TALIS BORDEAUX", Siret_formateur: "33851631300099", Siret_gestionnaire: "33851631300099", UAI_validee: "0333460G", Code_RNCP: "38362", Code_scolarite: "32031213", CP: "33000", Ville: "Bordeaux", Date_MAJ: "02/11/2026", Etat_diplome: "Diplôme en cours de validité", Annee_de_rentree: "2026, 2027", Debuts_sessions: "01/09/2026, 06/09/2027" },
     { Cle_ME: "x2", Statut_catalogue: "Publiée", Libelle_formation: "BTS Négociation et digitalisation de la relation client", Formateur_RS: "TALIS BORDEAUX", Siret_formateur: "33851631300099", Siret_gestionnaire: "33851631300099", UAI_validee: "0333460G", Code_RNCP: "38368", Code_scolarite: "32031212", CP: "33000", Ville: "Bordeaux", Date_MAJ: "02/11/2026", Etat_diplome: "Diplôme en état archivé", Annee_de_rentree: "2025, 2026", Debuts_sessions: "02/09/2025, 07/09/2026" },
   ];
@@ -1301,15 +1322,18 @@ function demo() {
     return { ...o, Annee_de_rentree: d.txt.slice(6), Date_debut: d.txt, Date_fin: "30/06/" + (Number(d.txt.slice(6)) + 2), Duree: "24 mois", Rythme: "2 jours en centre / 3 jours en entreprise" };
   })]));
   FERMETURES = [
-    { id: 1, UAI: "0333460G", Etablissement: "TALIS BORDEAUX", Formation: "BTS Support à l'action managériale - en apprentissage", Code_formation: "40001", Remarque: "Paramétrage non validé" },
-    { id: 2, UAI: "0331234A", Etablissement: "PIGIER BORDEAUX", Formation: "BTS GPME - en apprentissage", Code_formation: "34388", Remarque: "Signalement candidat via la rubrique contact" },
+    { id: 1, UAI: "0333460G", Etablissement: "TALIS BORDEAUX", Formation: "BTS Support à l'action managériale - en apprentissage", Code_formation: "40001", Remarque: "Paramétrage non validé", Campagne: "2025" },
+    { id: 3, UAI: "0339871A", Etablissement: "CFA EXEMPLE DES METIERS (Mérignac - 33)", Formation: "BTS Commerce international - en apprentissage", Code_formation: "99001",
+      Remarque: "Paramétrage non validé, signalements de candidats", Campagne: "2026" },
+    { id: 2, UAI: "0331234A", Etablissement: "PIGIER BORDEAUX", Formation: "BTS GPME - en apprentissage", Code_formation: "34388", Remarque: "Signalement candidat via la rubrique contact", Campagne: "2026" },
   ];
   PARAM = { URL_formulaire: "https://exemple/forms/abc" };
   ROWS.forEach(r => { r.Lien_fiche = PARAM.URL_formulaire + "?Code=" + r.Code; });
   ROWS.filter(r => r.Publiee === "Publiée" || r.Origine).forEach(r => { r.Lien_site = r.Lien_site || "https://www.exemple-etablissement.fr/formations"; });
   AFFICHAGE = [{ id: 1, Formation: 1, Mention_exclusivite_PS: "Oui", Mention_hors_PS: "Non", Pieces_non_necessaires: "Non", Entretien_admission: "Oui",
     Formation_identique_initiale: "Non", Commentaire: "", Date_controle: j("21/10") }];
-  NOTES = [{ id: 1, Formation: 2, Date: j("25/10"), Texte: "Appel de Mme Martin : la fiche sera remplie après les vacances.", Auteur: "B. Mauneau" }];
+  NOTES = [{ id: 1, Formation: 2, Date: j("25/10"), Texte: "Appel de Mme Martin : la fiche sera remplie après les vacances.", Auteur: "B. Mauneau" },
+    { id: 2, Formation: 6, Date: j("12/11"), Texte: "Vigilance : leur BTS Commerce international a été fermé sur Parcoursup l'an dernier. Vérifier le paramétrage avec M. Durand avant de publier.", Auteur: "B. Mauneau" }];
   INDEX = null;
   rendre();
 }
