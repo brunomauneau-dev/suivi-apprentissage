@@ -31,6 +31,18 @@ Ces lignes sont enregistrées à chaque import dans la table Grist `Export_ligne
 lue seulement à la demande : le chargement du widget n'est pas ralenti. Elles ne sont disponibles qu'après un premier import
 fait avec cette version.
 
+## Fermetures sur Parcoursup (vigilance)
+
+Le bouton « ⚠ Fermetures » liste les formations fermées sur Parcoursup (table Grist `Fermetures`, créée au premier import)
+et permet d'importer le fichier Excel des fermetures (colonnes UAI, Etablissement, formation, code formation, remarques) ;
+ce fichier est aussi reconnu par « importer le nouvel export » et par le glisser-déposer. Seules les lignes nouvelles
+sont ajoutées : la table peut aussi être complétée à la main dans Grist.
+
+Signalement, pour surveiller les établissements avant d'ouvrir de nouvelles formations :
+- pastille « ⚠ N fermetures » sur l'établissement (même UAI ou même nom d'organisme), rouge si une de ses formations est elle-même dans la liste ;
+- mention « ⚠ Fermée sur Parcoursup » sur la ligne de la formation dont le n° Parcoursup est dans la liste ;
+- dans la fiche : contrôle « Aucune formation de cet organisme fermée sur Parcoursup » et tableau des fermetures concernées.
+
 ## Module Thunderbird « Ajouter au suivi »
 
 Dossier `thunderbird/` (paquet prêt à installer : `suivi-apprentissage-thunderbird.xpi`).

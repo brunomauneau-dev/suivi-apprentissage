@@ -380,6 +380,7 @@ function rendre() {
     }
   }
   const q = norm(recherche);
+  const tagF = g => tagFermetures(tousGroupes.find(t => t.cle === g.cle) || g);
   const garde = (g, f) => (filtre === "tous" || f.cat_ === filtre) && (!q || norm(g.nom).includes(q) || norm(f.r.Formation).includes(q) || norm(f.r.Lieu).includes(q));
   let html;
   if (onglet === "controle") {
@@ -398,7 +399,7 @@ function rendre() {
       return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
         <div class="etab-head ligne"><span class="chev">▶</span>
           <div class="etab-name"><b>${esc(g.nom)}</b><span class="meta">${tot} formation${pl(tot)}</span></div>
-          <div class="tags">${tags}</div><button class="menu-etab" data-menu-etab="${esc(g.nom)}" title="Renommer, contact…">⋯</button></div>
+          <div class="tags">${tagF(g)}${tags}</div><button class="menu-etab" data-menu-etab="${esc(g.nom)}" title="Renommer, contact…">⋯</button></div>
         <div class="forms"><table class="liste-ouvertes">
           <tr><th>Formation</th><th>Retrouvée dans l'export</th><th>Diplôme</th><th>Session rentrée ${cible}</th><th>Statut</th></tr>
           ${fs.map(f => ligneOuverte(g, f)).join("")}</table></div>
@@ -420,7 +421,7 @@ function rendre() {
       return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
         <div class="etab-head ligne"><span class="chev">▶</span>
           <div class="etab-name"><b>${esc(g.nom)}</b><span class="meta">${tot} formation${pl(tot)}</span><span class="contact">${contactHtml(contactDe(g.nom), "")}</span></div>
-          <div class="tags">${tags}</div><button class="menu-etab" data-menu-etab="${esc(g.nom)}" data-demandes="1" title="Renommer, contact, ajouter une formation…">⋯</button></div>
+          <div class="tags">${tagF(g)}${tags}</div><button class="menu-etab" data-menu-etab="${esc(g.nom)}" data-demandes="1" title="Renommer, contact, ajouter une formation…">⋯</button></div>
         <div class="forms"><table class="liste-demandes suivi-etapes">
           <tr><th>Formation</th>${ETAPES.map(et => `<th class="e">${esc(et.nom === "Catalogue national" ? "Catalogue" : et.nom)}</th>`).join("")}<th>Prochaine action</th></tr>
           ${fs.map(ligneFormation).join("")}</table>
@@ -534,7 +535,7 @@ function ligneFormation(f) {
   const boutons = [f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
     f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : ""].join(" ");
   return `<tr class="ligne-f" data-id="${r.id}">
-    <td class="f-nom"><div class="f-tete"><b>${esc(r.Formation || "(sans intitulé)")}</b>${boutonMenuF(r, true)}${lienAjoutNote(r)}</div>${sous.length ? `<small>${sous.join(" · ")}</small>` : ""}${resumeNotes(r)}</td>
+    <td class="f-nom"><div class="f-tete"><b>${esc(r.Formation || "(sans intitulé)")}</b>${boutonMenuF(r, true)}${lienAjoutNote(r)}</div>${sous.length ? `<small>${sous.join(" · ")}</small>` : ""}${noteFermeture(r)}${resumeNotes(r)}</td>
     ${cases}
     <td class="action ${couleur}"><b>${esc(titre)}</b><span>${esc(f.next.txt)}</span>${boutons.trim() ? `<div>${boutons}</div>` : ""}</td></tr>`;
 }
@@ -556,7 +557,7 @@ function ligneOuverte(g, f) {
     ses = rok === false ? `${ko} ${d.length ? "dernière : " + d[d.length - 1].txt : "aucune pour " + rentreeCible()}` : rok ? `${ok} ${bonne ? bonne.txt : rentreeCible()}` : "?";
   }
   return `<tr class="ligne-o">
-    <td class="f-nom"><div class="f-tete"><b>${esc(r.Formation || "")}</b>${boutonMenuF(r, false)}${lienAjoutNote(r)}</div>${sous.length ? `<small>${sous.join(" · ")}</small>` : ""}${resumeNotes(r)}</td>
+    <td class="f-nom"><div class="f-tete"><b>${esc(r.Formation || "")}</b>${boutonMenuF(r, false)}${lienAjoutNote(r)}</div>${sous.length ? `<small>${sous.join(" · ")}</small>` : ""}${noteFermeture(r)}${resumeNotes(r)}</td>
     <td class="export">${export_}</td><td class="ck">${dip}</td><td class="ck">${ses}</td>
     <td class="statut">${pastille(f)}</td></tr>`;
 }
@@ -647,6 +648,7 @@ function brancher(zone) {
   zone.querySelectorAll("[data-mail]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); preparerMail(b.dataset.mail, null, b); }));
   zone.querySelectorAll("[data-fiche]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); voirFiche(Number(b.dataset.fiche)); }));
   zone.querySelectorAll("[data-rappro]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); rapprocher(Number(b.dataset.rappro)); }));
+  zone.querySelectorAll("[data-fermetures]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); ouvrirFermetures(b.dataset.fermetures, b); }));
 }
 
 // ------------------------------------------------------------------ fenêtres
@@ -956,6 +958,7 @@ function voirFiche(id) {
   const fi = f.fiche, c = f.cat;
   if (!fi) return;
   const ok = b => b ? `<span class="ok">✓</span>` : `<span class="ko">✗</span>`;
+  const fermF = fermeturesPour({ noms: [fi.Organisme, r.Etablissement].filter(Boolean), uais: [fi.UAI_lieu, fi.UAI_formateur, fi.UAI_gestionnaire, c && c.UAI_validee], codes: [r.g_ta_cod] });
   const controles = [
     ["SIRET valide", siretValide(fi.Siret)],
     ["UAI lieu valide", uaiValide(fi.UAI_lieu)], ...(fi.UAI_formateur ? [["UAI formateur valide", uaiValide(fi.UAI_formateur)]] : []),
@@ -967,6 +970,7 @@ function voirFiche(id) {
     ...("Charte" in fi ? [["Charte Parcoursup lue (case cochée)", !!fi.Charte]] : []),
     ...(fi.Date_debut ? [[`Début de formation ${texteFenetre()}`, fi.Date_debut * 1000 >= fenetreRentree()[0] && fi.Date_debut * 1000 <= fenetreRentree()[1]]] : []),
     ...(fi.Date_debut && fi.Date_fin ? [["Date de fin après la date de début", fi.Date_fin > fi.Date_debut]] : []),
+    ...(FERMETURES.length ? [["Aucune formation de cet organisme fermée sur Parcoursup", !fermF.length]] : []),
     ...("Fonction_signataire" in fi ? [["Signée par le chef d'établissement", /chef/i.test(String(fi.Fonction_signataire || ""))]] : []),
   ];
   const comp = c ? [
@@ -994,6 +998,7 @@ function voirFiche(id) {
         ${champ("Adresse", fi.Lieu_adresse)}${champ("Commune", fi.Commune)}${champ("Code postal", fi.Code_postal)}${champ("Demandeur (nom, tél., fonction)", fi.Signataire)}${"Fonction_signataire" in fi ? champ("Fonction", fi.Fonction_signataire) : ""}</div>
     </div>
     <h3>Contrôles automatiques</h3><ul class="controles">${controles.map(([l, b]) => `<li>${ok(b)} ${esc(l)}</li>`).join("")}</ul>
+    ${fermF.length ? `<h3>Fermetures sur Parcoursup — vigilance</h3>${tableFermetures(fermF, true)}` : ""}
     <h3>Comparaison avec l'export Carif-Oref</h3>
     ${comp ? `<table class="comp"><tr><th></th><th>Fiche</th><th>Export Carif-Oref</th><th></th></tr>
       ${comp.map(([l, a, b, eg]) => `<tr><td>${esc(l)}</td><td>${esc(a)}</td><td>${esc(b)}</td><td>${ok(eg)}</td></tr>`).join("")}</table>
@@ -1204,6 +1209,9 @@ async function importerExport(fichier, silencieux) {
   try {
     info("Lecture de l'export…");
     const wb = XLSX.read(fichier instanceof ArrayBuffer ? fichier : await fichier.arrayBuffer(), { type: "array" });
+    // le même bouton (ou le glisser-déposer) accepte aussi le fichier des formations fermées sur Parcoursup
+    const ferm = enteteFermetures(wb.Sheets[wb.SheetNames[0]]);
+    if (ferm) return await importerFermetures(ferm, info);
     const brut = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null, raw: true });
     const rows = preparerExport(brut);
     if (!rows.length) { if (silencieux) return false; info("Aucune formation de l'académie de " + ACADEMIE + " dans ce fichier : est-ce bien l'export Apprentissage ?"); return false; }
@@ -1235,7 +1243,7 @@ async function importerExport(fichier, silencieux) {
 
 async function charger() {
   try {
-    const [s, f, c, p, af, nt0] = await Promise.all(["Suivi", "Fiches", "Catalogue", "Parametres", "Affichage", "Notes"].map(t => grist.docApi.fetchTable(t).catch(() => null)));
+    const [s, f, c, p, af, nt0, fe] = await Promise.all(["Suivi", "Fiches", "Catalogue", "Parametres", "Affichage", "Notes", TABLE_FERMETURES].map(t => grist.docApi.fetchTable(t).catch(() => null)));
     const nt = await preparerNotes(nt0).catch(() => null);
     if (!s) throw new Error("table « Suivi » introuvable ou accès refusé");
     const manquantes = [["Contact_nom", "Contact (nom)"], ["Contact_tel", "Contact (téléphone)"], ["Contact_email", "Contact (mail)"],
@@ -1254,7 +1262,7 @@ async function charger() {
       await grist.docApi.applyUserActions([["AddColumn", "Affichage", "Mail_envoye_le", { type: "Date", label: "Mail envoyé le", isFormula: false }]]);
       af.Mail_envoye_le = af.id.map(() => null);
     }
-    ROWS = lignes(s); FICHES = lignes(f); CATALOGUE = lignes(c); PARAM = lignes(p)[0] || {}; AFFICHAGE = lignes(af); NOTES = lignes(nt); INDEX = null; DEMO = false;
+    ROWS = lignes(s); FICHES = lignes(f); CATALOGUE = lignes(c); PARAM = lignes(p)[0] || {}; AFFICHAGE = lignes(af); NOTES = lignes(nt); FERMETURES = lignes(fe); INDEX = null; DEMO = false;
   } catch (e) {
     const ban = document.getElementById("bandeaux");
     if (ban) ban.innerHTML = `<div class="banner" style="background:var(--red-bg);color:var(--red)">Impossible de lire le document (${esc(e && e.message || e)}).
@@ -1292,6 +1300,10 @@ function demo() {
     for (const [k, v] of Object.entries(c)) if (inverse[k] && k !== "Annee_de_rentree" && v) o[inverse[k]] = v;
     return { ...o, Annee_de_rentree: d.txt.slice(6), Date_debut: d.txt, Date_fin: "30/06/" + (Number(d.txt.slice(6)) + 2), Duree: "24 mois", Rythme: "2 jours en centre / 3 jours en entreprise" };
   })]));
+  FERMETURES = [
+    { id: 1, UAI: "0333460G", Etablissement: "TALIS BORDEAUX", Formation: "BTS Support à l'action managériale - en apprentissage", Code_formation: "40001", Remarque: "Paramétrage non validé" },
+    { id: 2, UAI: "0331234A", Etablissement: "PIGIER BORDEAUX", Formation: "BTS GPME - en apprentissage", Code_formation: "34388", Remarque: "Signalement candidat via la rubrique contact" },
+  ];
   PARAM = { URL_formulaire: "https://exemple/forms/abc" };
   ROWS.forEach(r => { r.Lien_fiche = PARAM.URL_formulaire + "?Code=" + r.Code; });
   ROWS.filter(r => r.Publiee === "Publiée" || r.Origine).forEach(r => { r.Lien_site = r.Lien_site || "https://www.exemple-etablissement.fr/formations"; });
@@ -1310,6 +1322,8 @@ if (typeof window !== "undefined") {
     if (nouv) nouv.addEventListener("click", ev => { ev.stopPropagation(); ouvrirAjout(""); });
     const pdf = document.getElementById("export-pdf");
     if (pdf) pdf.addEventListener("click", ev => { ev.stopPropagation(); exporterPdf(); });
+    const bf = document.getElementById("voir-fermetures");
+    if (bf) bf.addEventListener("click", ev => { ev.stopPropagation(); ouvrirToutesFermetures(bf); });
     const imp = document.getElementById("importer"), fic = document.getElementById("fichier-export");
     if (imp && fic) {
       imp.addEventListener("click", ev => { ev.stopPropagation(); importerDepuisCapMetiers(); });
