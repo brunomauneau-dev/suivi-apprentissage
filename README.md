@@ -19,6 +19,9 @@ avec le filtre et la recherche en cours, regroupé par établissement :
 - *Formations déjà ouvertes* : formation retrouvée dans l'export, diplôme, session de rentrée, statut, dernière note ;
 - *Contrôle d'affichage* : état, date du contrôle, critères, mail envoyé, commentaire.
 
+Dans les trois onglets, un bandeau « Vigilance » sous l'établissement liste ses formations fermées sur Parcoursup
+(rouge si une formation suivie est elle-même fermée, orange sinon), et la formation fermée porte la mention « FERMÉE SUR PARCOURSUP ».
+
 Bibliothèques jsPDF et jsPDF-AutoTable dans `lib/` (licence MIT), chargées au premier export seulement.
 
 ## Lignes de l'export
@@ -41,7 +44,8 @@ sont ajoutées : la table peut aussi être complétée à la main dans Grist.
 Signalement, pour surveiller les établissements avant d'ouvrir de nouvelles formations :
 - pastille « ⚠ N fermetures » sur l'établissement (même UAI ou même nom d'organisme), rouge si une de ses formations est elle-même dans la liste ;
 - mention « ⚠ Fermée sur Parcoursup » sur la ligne de la formation dont le n° Parcoursup est dans la liste ;
-- dans la fiche : contrôle « Aucune formation de cet organisme fermée sur Parcoursup » et tableau des fermetures concernées.
+- dans la fiche : contrôle « Aucune formation de cet organisme fermée sur Parcoursup » et tableau des fermetures concernées ;
+- dans l'export PDF : bandeau « Vigilance » sous l'établissement et mention sur la formation fermée.
 
 ## Module Thunderbird « Ajouter au suivi »
 

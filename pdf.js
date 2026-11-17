@@ -41,12 +41,27 @@ function groupesAffiches() {
   const dansOnglet = f => !!f.historique === (onglet === "ouvertes");
   const garde = (g, f) => (filtre === "tous" || f.cat_ === filtre) && (!q || norm(g.nom).includes(q) || norm(f.r.Formation).includes(q) || norm(f.r.Lieu).includes(q));
   const ordre = { saio: 0, attente: 1, nonpub: 2, parcoursup: 3, publie: 3 };
-  return construire(ROWS).map(g => ({ ...g, tot: g.formations.filter(dansOnglet).length,
+  return construire(ROWS).map(g => ({ ...g, ferm: fermeturesDuGroupe(g), tot: g.formations.filter(dansOnglet).length,
     formations: g.formations.filter(f => dansOnglet(f) && garde(g, f))
       .sort((a, b) => ordre[a.cat_] - ordre[b.cat_] || String(a.r.Formation).localeCompare(String(b.r.Formation))) }))
     .filter(g => g.formations.length);
 }
 const pl = n => n > 1 ? "s" : "";
+
+// Fermetures sur Parcoursup (fermetures.js) : une ligne de vigilance sous l'en-tête de l'établissement…
+function ligneVigilance(ferm) {
+  if (!ferm || !ferm.length) return null;
+  const meme = ferm.some(f => f.raison === "cette formation");
+  return { ferm: true, etat: meme ? "ko" : "warn", cells: [`Vigilance — ${ferm.length} formation${pl(ferm.length)} de cet organisme fermée${pl(ferm.length)} sur Parcoursup :\n` +
+    ferm.map(({ x, raison }) => `- ${x.Formation}${x.Code_formation ? " (n° " + x.Code_formation + ")" : ""}${x.Remarque ? " — " + x.Remarque : ""} [${raison}]`).join("\n")] };
+}
+// … et une mention sur la formation elle-même quand son n° Parcoursup est dans la liste
+function mentionFermee(r) {
+  if (!r.g_ta_cod || typeof FERMETURES === "undefined") return "";
+  const x = FERMETURES.find(y => String(y.Code_formation || "").trim() === String(r.g_ta_cod).trim());
+  return x ? "\n" + txt("FERMÉE SUR PARCOURSUP" + (x.Remarque ? " : " + x.Remarque : "")) : "";   // txt() ôterait le retour à la ligne
+}
+const fermeturesDuGroupe = g => typeof fermeturesEtab === "function" ? fermeturesEtab(g) : [];
 
 function tableDemandes() {
   const etapes = ETAPES.map(et => et.nom === "Catalogue national" ? "Catalogue" : et.nom);
@@ -56,6 +71,7 @@ function tableDemandes() {
   for (const g of groupesAffiches()) {
     const c = contactDe(g.nom), contact = [c.nom, c.tel, c.email].filter(Boolean).join(" · ");
     corps.push({ etab: true, cells: [`${g.nom} — ${g.tot} formation${pl(g.tot)}${contact ? " — contact : " + contact : ""}`] });
+    const vig = ligneVigilance(g.ferm); if (vig) corps.push(vig);
     for (const f of g.formations) {
       n++;
       const r = f.r, prochaine = ETAPES.findIndex((et, i) => f.e[i].s !== "done");
@@ -68,7 +84,7 @@ function tableDemandes() {
       });
       const etat = { saio: "warn", attente: "wait", publie: "ok" }[f.cat_] || "wait";
       corps.push({ cells: [
-        { content: txt(r.Formation || "(sans intitulé)") + (r.Lieu ? "\n" + txt(r.Lieu) : ""), styles: { fontStyle: "bold" } },
+        { content: txt(r.Formation || "(sans intitulé)") + (r.Lieu ? "\n" + txt(r.Lieu) : "") + mentionFermee(r), styles: { fontStyle: "bold" } },
         ...cases,
         cel((f.cat_ === "saio" ? "À faire au SAIO" : f.next.titre) + "\n" + f.next.txt, etat),
         cel(derniereNote(r)),
@@ -87,6 +103,7 @@ function tableOuvertes() {
   let n = 0;
   for (const g of groupesAffiches()) {
     corps.push({ etab: true, cells: [`${g.nom} — ${g.tot} formation${pl(g.tot)}`] });
+    const vig = ligneVigilance(g.ferm); if (vig) corps.push(vig);
     for (const f of g.formations) {
       n++;
       const r = f.r, c = f.cat;
@@ -104,7 +121,7 @@ function tableOuvertes() {
       }
       const [cls, lib] = f.cat_ === "saio" ? ["warn", "À retrouver"] : PASTILLE[f.cat_] || ["wait", ""];
       corps.push({ cells: [
-        { content: txt(r.Formation || "") + (sous ? "\n" + txt(sous) : ""), styles: { fontStyle: "bold" } },
+        { content: txt(r.Formation || "") + (sous ? "\n" + txt(sous) : "") + mentionFermee(r), styles: { fontStyle: "bold" } },
         exp, dip, ses,
         cel(lib + (f.cat_ === "nonpub" && f.next.txt ? "\n" + f.next.txt : ""), cls),
         cel(derniereNote(r)),
@@ -120,12 +137,15 @@ function tableControle() {
   const etatCouleur = { ok: "ok", ko: "ko", surv: "warn", afaire: "wait", incomplet: "warn" };
   const liste = listeControle(norm(recherche), filtre);
   let courant = null;
+  const groupes = new Map(construire(ROWS).map(g => [g.cle, g]));
   for (const { r, e } of liste) {
     const nom = r.Etablissement || "Sans établissement";
     if (nom !== courant) {
       courant = nom;
       const nb = liste.filter(x => (x.r.Etablissement || "Sans établissement") === nom).length;
       corps.push({ etab: true, cells: [`${nom} — ${nb} formation${pl(nb)}`] });
+      const g = groupes.get(norm(nom)), vig = g ? ligneVigilance(fermeturesDuGroupe(g)) : null;
+      if (vig) corps.push(vig);
     }
     const a = e.a, fait = e.s !== "afaire";
     const crit = CRITERES.map(c => {
@@ -135,7 +155,7 @@ function tableControle() {
     });
     const quand = !fait ? (a && a.Date_controle ? "dernier : " + dateFr(a.Date_controle) : "jamais") : e.ancien ? "ancien tableau" : dateFr(a.Date_controle);
     corps.push({ cells: [
-      { content: txt(r.Formation) + ([r.Lieu, r.Lien_site].filter(Boolean).length ? "\n" + txt([r.Lieu, r.Lien_site].filter(Boolean).join(" · ")) : ""), styles: { fontStyle: "bold" } },
+      { content: txt(r.Formation) + ([r.Lieu, r.Lien_site].filter(Boolean).length ? "\n" + txt([r.Lieu, r.Lien_site].filter(Boolean).join(" · ")) : "") + mentionFermee(r), styles: { fontStyle: "bold" } },
       cel(LIB_ETAT[e.s] + (e.s === "ko" ? ` (${e.n} point${pl(e.n)})` : ""), etatCouleur[e.s]),
       cel(quand), ...crit,
       cel(a && a.Mail_envoye_le ? dateFr(a.Mail_envoye_le) : ""),
@@ -160,7 +180,7 @@ async function exporterPdf() {
     const libFiltre = filtre !== "tous" ? (chips.find(([k]) => k === filtre) || [, filtre])[1] : "";
     const maintenant = new Date();
     const infos = [`Édité le ${maintenant.toLocaleDateString("fr-FR")} à ${maintenant.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`,
-      `${t.n} formation${pl(t.n)}`, libFiltre ? "filtre : " + libFiltre : "", recherche.trim() ? `recherche : « ${recherche.trim()} »` : "",
+      `${t.n} formation${pl(t.n)}`, t.corps.some(l => l.ferm) ? `${t.corps.filter(l => l.ferm).length} établissement${pl(t.corps.filter(l => l.ferm).length)} avec fermetures sur Parcoursup` : "", libFiltre ? "filtre : " + libFiltre : "", recherche.trim() ? `recherche : « ${recherche.trim()} »` : "",
       DEMO ? "données de démonstration" : ""].filter(Boolean).join(" · ");
     const export_ = document.getElementById("sous-titre");
 
@@ -178,6 +198,7 @@ async function exporterPdf() {
       head: [t.head.map(txt)],
       body: t.corps.length ? t.corps.map(l => l.etab
         ? [{ content: txt(l.cells[0]), colSpan: nbCol, styles: { fontStyle: "bold", fillColor: [232, 235, 247], textColor: [0, 0, 145], fontSize: 9 } }]
+        : l.ferm ? [{ content: txt(l.cells[0]), colSpan: nbCol, styles: { fillColor: COULEURS_PDF[l.etat], textColor: TEXTES_PDF[l.etat], fontSize: 7.5 } }]
         : l.cells) : [[{ content: "Aucune formation ne correspond.", colSpan: nbCol, styles: { halign: "center", textColor: [120, 120, 120] } }]],
       theme: "grid",
       styles: { font: "helvetica", fontSize: 7.5, cellPadding: 1.6, valign: "middle", lineColor: [220, 220, 220], lineWidth: 0.2, textColor: [30, 30, 30], overflow: "linebreak" },
