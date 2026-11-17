@@ -21,6 +21,16 @@ avec le filtre et la recherche en cours, regroupé par établissement :
 
 Bibliothèques jsPDF et jsPDF-AutoTable dans `lib/` (licence MIT), chargées au premier export seulement.
 
+## Lignes de l'export
+
+Dans la fenêtre « Retrouver dans l'export Carif-Oref », le lien « Lignes de l'export ▸ » sous chaque formation affiche
+toutes ses lignes du fichier Excel (une par session, toutes les colonnes non vides) ; les colonnes qui changent d'une ligne
+à l'autre sont surlignées. Le bouton « ⤓ Lignes de l'export (.xlsx) » télécharge les lignes de toutes les formations proposées.
+
+Ces lignes sont enregistrées à chaque import dans la table Grist `Export_lignes` (créée automatiquement, une ligne par formation),
+lue seulement à la demande : le chargement du widget n'est pas ralenti. Elles ne sont disponibles qu'après un premier import
+fait avec cette version.
+
 ## Module Thunderbird « Ajouter au suivi »
 
 Dossier `thunderbird/` (paquet prêt à installer : `suivi-apprentissage-thunderbird.xpi`).
