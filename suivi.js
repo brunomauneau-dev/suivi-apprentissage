@@ -148,6 +148,12 @@ function dejaOuvertes(etab, formation) {
   if (e.length < 4 || !q.size) return [];
   return formationsOuvertes().filter(x => x.etab.length >= 4 && (x.etab.includes(e) || e.includes(x.etab)) && part(q, x.t) === 1 && part(x.t, q) >= 0.5).map(x => x.h);
 }
+// Année scolaire de la campagne où la formation a été ouverte : d'après sa date de publication, sinon la campagne précédente
+// (pour la rentrée 2027, les formations déjà ouvertes l'ont été en 2025-2026)
+function anneeOuverture(h) {
+  if (h && h.Publiee_le) { const d = new Date(h.Publiee_le * 1000), a = d.getUTCFullYear() - (d.getUTCMonth() >= 8 ? 0 : 1); return `${a}-${a + 1}`; }
+  return `${rentreeCible() - 2}-${rentreeCible() - 1}`;
+}
 const doublonDe = r => r.Deja_ouverte === "NON" || r.Publiee === "Publiée" || estHistorique(r) ? [] : dejaOuvertes(r.Etablissement, r.Formation);
 
 function catalogueLie(r) {
@@ -264,7 +270,7 @@ function analyser(r, maintenant) {
   }
   if (!ficheDate) {
     const doublon = doublonDe(r);
-    if (doublon.length) return { ...base, doublon, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Vérifier : déjà ouverte l'an dernier" } };
+    if (doublon.length) return { ...base, doublon, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Vérifier : déjà ouverte en " + anneeOuverture(doublon[0]) } };
   }
   if (!r.Lien_envoye && !ficheDate) return { ...base, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Envoyer le lien de la fiche" } };
   if (!ficheDate) {
@@ -566,7 +572,7 @@ function ligneFormation(f) {
 function ligneDoublon(f) {
   if (!f.doublon || !f.doublon.length) return "";
   const h = f.doublon[0];
-  return `<div class="doublon-ligne" title="Déjà ouverte : ${esc(h.Formation)}">Déjà ouverte${h.g_ta_cod ? " (n° " + esc(h.g_ta_cod) + ")" : ""} :
+  return `<div class="doublon-ligne" title="Déjà ouverte : ${esc(h.Formation)}">Déjà ouverte en ${anneeOuverture(h)}${h.g_ta_cod ? " (n° " + esc(h.g_ta_cod) + ")" : ""} :
     <button class="btn-lien" data-voir-ouverte="${esc(h.Etablissement)}">voir</button> · <button class="btn-lien" data-suppr-doublon="${f.r.id}">supprimer la demande</button>
     · <button class="btn-lien gris" data-pas-doublon="${f.r.id}">ce n'est pas la même</button></div>`;
 }
@@ -888,8 +894,9 @@ function ouvrirAjout(etab) {
   const avertDoublon = () => {
     const el = document.getElementById("aj-etab"), fo = document.getElementById("aj-forms"), z = document.getElementById("aj-doublon");
     if (!el || !fo || !z) return;
-    const deja = fo.value.split(/\n|;/).map(x => x.trim()).filter(Boolean).filter(x => dejaOuvertes(el.value, x).length);
-    z.textContent = deja.length ? `Déjà ouverte${deja.length > 1 ? "s" : ""} pour cet établissement (onglet « Formations déjà ouvertes ») : ${deja.join(" · ")}` : "";
+    const deja = fo.value.split(/\n|;/).map(x => x.trim()).filter(Boolean).map(x => [x, dejaOuvertes(el.value, x)[0]]).filter(([, h]) => h);
+    const annees = [...new Set(deja.map(([, h]) => anneeOuverture(h)))].join(", ");
+    z.textContent = deja.length ? `Déjà ouverte${deja.length > 1 ? "s" : ""} en ${annees} pour cet établissement (onglet « Formations déjà ouvertes ») : ${deja.map(([x]) => x).join(" · ")}` : "";
     z.hidden = !deja.length;
   };
   avert();
