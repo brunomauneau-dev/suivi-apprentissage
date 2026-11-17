@@ -818,6 +818,7 @@ function ouvrirAjout(etab) {
   const pop = nouvellePop("pop-large");
   pop.innerHTML = `<b>${etab ? "Ajouter des formations pour " + esc(etab) : "Nouvelle demande de référencement"}</b>
     <label>Établissement <input id="aj-etab" list="aj-liste" value="${esc(etab || "")}" placeholder="Nom de l'établissement"></label>
+    <div class="ferm-ligne" id="aj-ferm" hidden></div>
     <datalist id="aj-liste">${noms.map(n => `<option value="${esc(n)}">`).join("")}</datalist>
     <label>Formations demandées <small>(une par ligne)</small><textarea id="aj-forms" rows="4" placeholder="BTS NDRC&#10;BTS MCO"></textarea></label>
     <label>Lieu / campus <small>(facultatif)</small><input id="aj-lieu"></label>
@@ -836,7 +837,15 @@ function ouvrirAjout(etab) {
     }
   };
   remplirContact();
-  const etEl = document.getElementById("aj-etab"); if (etEl) etEl.addEventListener("change", remplirContact);
+  // avertissement « formations fermées sur Parcoursup », mis à jour pendant la saisie du nom
+  const avert = () => {
+    const el = document.getElementById("aj-etab"), z = document.getElementById("aj-ferm");
+    if (!el || !z) return;
+    const t = avertissementFermetures(el.value);
+    z.textContent = t; z.hidden = !t;
+  };
+  avert();
+  const etEl = document.getElementById("aj-etab"); if (etEl) { etEl.addEventListener("change", remplirContact); etEl.addEventListener("input", avert); }
   const annul = document.getElementById("aj-annul"); if (annul) annul.addEventListener("click", fermerPop);
   const ok = document.getElementById("aj-ok");
   if (ok) ok.addEventListener("click", async () => {
@@ -1258,6 +1267,10 @@ async function charger() {
       await grist.docApi.applyUserActions(manquantesC.map(k => ["AddColumn", "Catalogue", k, { type: "Text", label: k, isFormula: false }]));
       for (const k of manquantesC) c[k] = c.id.map(() => null);
     }
+    if (fe && !("Campagne" in fe)) {
+      await grist.docApi.applyUserActions([["AddColumn", TABLE_FERMETURES, "Campagne", { type: "Text", label: "Campagne", isFormula: false }]]);
+      fe.Campagne = fe.id.map(() => null);
+    }
     if (af && !("Mail_envoye_le" in af)) {
       await grist.docApi.applyUserActions([["AddColumn", "Affichage", "Mail_envoye_le", { type: "Date", label: "Mail envoyé le", isFormula: false }]]);
       af.Mail_envoye_le = af.id.map(() => null);
@@ -1309,10 +1322,10 @@ function demo() {
     return { ...o, Annee_de_rentree: d.txt.slice(6), Date_debut: d.txt, Date_fin: "30/06/" + (Number(d.txt.slice(6)) + 2), Duree: "24 mois", Rythme: "2 jours en centre / 3 jours en entreprise" };
   })]));
   FERMETURES = [
-    { id: 1, UAI: "0333460G", Etablissement: "TALIS BORDEAUX", Formation: "BTS Support à l'action managériale - en apprentissage", Code_formation: "40001", Remarque: "Paramétrage non validé" },
+    { id: 1, UAI: "0333460G", Etablissement: "TALIS BORDEAUX", Formation: "BTS Support à l'action managériale - en apprentissage", Code_formation: "40001", Remarque: "Paramétrage non validé", Campagne: "2025" },
     { id: 3, UAI: "0339871A", Etablissement: "CFA EXEMPLE DES METIERS (Mérignac - 33)", Formation: "BTS Commerce international - en apprentissage", Code_formation: "99001",
-      Remarque: "Fermée l'an dernier (campagne Parcoursup 2026) : paramétrage non validé, signalements de candidats" },
-    { id: 2, UAI: "0331234A", Etablissement: "PIGIER BORDEAUX", Formation: "BTS GPME - en apprentissage", Code_formation: "34388", Remarque: "Signalement candidat via la rubrique contact" },
+      Remarque: "Paramétrage non validé, signalements de candidats", Campagne: "2026" },
+    { id: 2, UAI: "0331234A", Etablissement: "PIGIER BORDEAUX", Formation: "BTS GPME - en apprentissage", Code_formation: "34388", Remarque: "Signalement candidat via la rubrique contact", Campagne: "2026" },
   ];
   PARAM = { URL_formulaire: "https://exemple/forms/abc" };
   ROWS.forEach(r => { r.Lien_fiche = PARAM.URL_formulaire + "?Code=" + r.Code; });

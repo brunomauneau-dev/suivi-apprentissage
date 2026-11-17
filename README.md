@@ -40,10 +40,14 @@ Le bouton « ⚠ Fermetures » liste les formations fermées sur Parcoursup (tab
 et permet d'importer le fichier Excel des fermetures (colonnes UAI, Etablissement, formation, code formation, remarques) ;
 ce fichier est aussi reconnu par « importer le nouvel export » et par le glisser-déposer. Seules les lignes nouvelles
 sont ajoutées : la table peut aussi être complétée à la main dans Grist.
+À l'import, l'outil demande la campagne Parcoursup des fermetures (par défaut l'année précédant la rentrée visée),
+sauf si le fichier a une colonne « Campagne » ou « Année » ; un réimport complète la campagne des lignes qui n'en ont pas.
+Toutes les campagnes enregistrées sont prises en compte ; la campagne est indiquée dans chaque signalement.
 
 Signalement, pour surveiller les établissements avant d'ouvrir de nouvelles formations :
 - pastille « ⚠ N fermetures » sur l'établissement (même UAI ou même nom d'organisme), rouge si une de ses formations est elle-même dans la liste ;
 - mention « ⚠ Fermée sur Parcoursup » sur la ligne de la formation dont le n° Parcoursup est dans la liste ;
+- dans la fenêtre « + Nouvelle demande » : une ligne d'avertissement dès que le nom saisi correspond à une fermeture ;
 - dans la fiche : contrôle « Aucune formation de cet organisme fermée sur Parcoursup » et tableau des fermetures concernées ;
 - dans l'export PDF : bandeau « Vigilance » sous l'établissement et mention sur la formation fermée.
 

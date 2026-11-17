@@ -53,13 +53,13 @@ function ligneVigilance(ferm) {
   if (!ferm || !ferm.length) return null;
   const meme = ferm.some(f => f.raison === "cette formation");
   return { ferm: true, etat: meme ? "ko" : "warn", cells: [`Vigilance — ${ferm.length} formation${pl(ferm.length)} de cet organisme fermée${pl(ferm.length)} sur Parcoursup :\n` +
-    ferm.map(({ x, raison }) => `- ${x.Formation}${x.Code_formation ? " (n° " + x.Code_formation + ")" : ""}${x.Remarque ? " — " + x.Remarque : ""} [${raison}]`).join("\n")] };
+    ferm.map(({ x, raison }) => `- ${x.Formation}${x.Code_formation ? " (n° " + x.Code_formation + ")" : ""}${x.Campagne ? ", campagne " + x.Campagne : ""}${x.Remarque ? " — " + x.Remarque : ""} [${raison}]`).join("\n")] };
 }
 // … et une mention sur la formation elle-même quand son n° Parcoursup est dans la liste
 function mentionFermee(r) {
   if (!r.g_ta_cod || typeof FERMETURES === "undefined") return "";
   const x = FERMETURES.find(y => String(y.Code_formation || "").trim() === String(r.g_ta_cod).trim());
-  return x ? "\n" + txt("FERMÉE SUR PARCOURSUP" + (x.Remarque ? " : " + x.Remarque : "")) : "";   // txt() ôterait le retour à la ligne
+  return x ? "\n" + txt("FERMÉE SUR PARCOURSUP" + (x.Campagne ? " EN " + x.Campagne : "") + (x.Remarque ? " : " + x.Remarque : "")) : "";   // txt() ôterait le retour à la ligne
 }
 const fermeturesDuGroupe = g => typeof fermeturesEtab === "function" ? fermeturesEtab(g) : [];
 
