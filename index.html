@@ -9,7 +9,8 @@
 <script src="controle.js?v=9" defer></script>
 <script src="notes.js?v=9" defer></script>
 <script src="pdf.js?v=1" defer></script>
-<script src="suivi.js?v=58" defer></script>
+<script src="fermetures.js?v=1" defer></script>
+<script src="suivi.js?v=59" defer></script>
 <style>
   :root {
     --bg: #f6f6f6; --card: #ffffff; --text: #1e1e1e; --muted: #666; --line: #e5e5e5;
@@ -47,6 +48,10 @@
   .tag.warn { background: var(--amber-bg); color: var(--amber); }
   .tag.ko { background: var(--red-bg); color: var(--red); }
   .tag.wait { background: var(--grey-bg); color: var(--muted); }
+  button.tag.ferm { border: 1px solid var(--amber); background: var(--amber-bg); color: var(--amber); cursor: pointer; font: inherit; font-size: 12px; }
+  button.tag.ferm.ko { border-color: var(--red); background: var(--red-bg); color: var(--red); }
+  .ferm-ligne { font-size: 12px; color: var(--red); margin-top: 2px; }
+  table.ferm-table td { vertical-align: top; } table.ferm-table tr.meme td { background: var(--red-bg); }
   .forms { display: none; border-top: 1px solid var(--line); }
   .etab.open .forms { display: block; }
   .form { display: grid; grid-template-columns: 220px 1fr 290px; gap: 16px; align-items: center; padding: 14px 18px 14px 54px; border-bottom: 1px solid var(--line); }
@@ -282,6 +287,7 @@
 <div class="bar">
   <input id="q" type="search" placeholder="Rechercher un établissement, une formation, un site…">
   <span id="chips" class="chips"></span>
+  <button class="btn-pdf" id="voir-fermetures" title="Formations fermées sur Parcoursup : consulter, importer le fichier">⚠ Fermetures</button>
   <button class="btn-pdf" id="export-pdf" title="Exporter en PDF le tableau affiché (filtre et recherche compris)">⤓ PDF</button>
   <button class="btn-nouveau" id="nouveau">+ Nouvelle demande</button>
   <input type="file" id="fichier-export" accept=".xlsb,.xlsx,.xls,.csv" hidden>
