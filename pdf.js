@@ -47,6 +47,8 @@ function groupesAffiches() {
     .filter(g => g.formations.length);
 }
 const pl = n => n > 1 ? "s" : "";
+// comme à l'écran : formations affichées, « sur N » quand le filtre ou la recherche en masquent
+const nbPdf = g => `${g.formations.length} formation${pl(g.formations.length)}${g.formations.length < g.tot ? " sur " + g.tot : ""}`;
 
 // Fermetures sur Parcoursup (fermetures.js) : une ligne de vigilance sous l'en-tête de l'établissement…
 function ligneVigilance(ferm) {
@@ -70,7 +72,7 @@ function tableDemandes() {
   let n = 0;
   for (const g of groupesAffiches()) {
     const c = contactDe(g.nom), contact = [c.nom, c.tel, c.email].filter(Boolean).join(" · ");
-    corps.push({ etab: true, cells: [`${g.nom} — ${g.tot} formation${pl(g.tot)}${contact ? " — contact : " + contact : ""}`] });
+    corps.push({ etab: true, cells: [`${g.nom} — ${nbPdf(g)}${contact ? " — contact : " + contact : ""}`] });
     const vig = ligneVigilance(g.ferm); if (vig) corps.push(vig);
     for (const f of g.formations) {
       n++;
@@ -102,7 +104,7 @@ function tableOuvertes() {
   const corps = [];
   let n = 0;
   for (const g of groupesAffiches()) {
-    corps.push({ etab: true, cells: [`${g.nom} — ${g.tot} formation${pl(g.tot)}`] });
+    corps.push({ etab: true, cells: [`${g.nom} — ${nbPdf(g)}`] });
     const vig = ligneVigilance(g.ferm); if (vig) corps.push(vig);
     for (const f of g.formations) {
       n++;

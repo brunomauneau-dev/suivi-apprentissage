@@ -340,6 +340,8 @@ const CHIPS = {
   controle: [["afaire", "À contrôler"], ["ko", "Non conformes"], ["surv", "À surveiller"], ["ok", "Conformes"], ["tous", "Tous"]],
 };
 const ouverts = new Set();
+// « 3 formations », ou « 2 formations sur 10 » quand le filtre ou la recherche en masquent
+const nbFormations = (n, tot) => `${n} formation${n > 1 ? "s" : ""}${n < tot ? ` <span class="sur">sur ${tot}</span>` : ""}`;
 
 function rendre() {
   const zone = document.getElementById("liste");
@@ -419,14 +421,15 @@ function rendre() {
       const fs = g.formations.filter(f => garde(g, f))
         .sort((a, b) => ordre[a.cat_] - ordre[b.cat_] || String(a.r.Formation).localeCompare(String(b.r.Formation)));
       if (!fs.length) return "";
-      const tot = g.formations.length, c = k => g.formations.filter(f => f.cat_ === k).length, pl = k => k > 1 ? "s" : "";
+      // pastilles et nombre : seulement les formations affichées (filtre et recherche), « sur N » quand une partie est masquée
+      const tot = g.formations.length, c = k => fs.filter(f => f.cat_ === k).length, pl = k => k > 1 ? "s" : "";
       const ok = c("parcoursup"), np = c("nonpub"), ar = c("saio");
       const tags = [ar ? `<span class="tag warn">${ar} à retrouver</span>` : "", np ? `<span class="tag wait">${np} non publiable${pl(np)}</span>` : "",
         ok ? `<span class="tag ok">${ok} publiable${pl(ok)}</span>` : ""].join("");
       const ouvert = ouverts.has(g.cle) || !!q;
       return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
         <div class="etab-head ligne"><span class="chev">▶</span>
-          <div class="etab-name"><b>${esc(g.nom)}</b><span class="meta">${tot} formation${pl(tot)}</span></div>
+          <div class="etab-name"><b>${esc(g.nom)}</b><span class="meta">${nbFormations(fs.length, tot)}</span></div>
           <div class="tags">${tagF(g)}${tags}</div><button class="menu-etab" data-menu-etab="${esc(g.nom)}" title="Renommer, contact…">⋯</button></div>
         <div class="forms"><table class="liste-ouvertes">
           <tr><th>Formation</th><th>Retrouvée dans l'export</th><th>Diplôme</th><th>Session rentrée ${cible}</th><th>Statut</th></tr>
@@ -438,7 +441,8 @@ function rendre() {
       const toutesG = g.formations.filter(f => !f.historique);
       const fs = toutesG.filter(f => garde(g, f));
       if (!fs.length) return "";
-      const tot = toutesG.length, c = k => toutesG.filter(f => f.cat_ === k).length;
+      // pastilles et nombre : seulement les formations affichées (filtre et recherche), « sur N » quand une partie est masquée
+      const tot = toutesG.length, c = k => fs.filter(f => f.cat_ === k).length;
       const sai = c("saio"), att = c("attente"), fin = c("publie");
       const pl = k => k > 1 ? "s" : "";
       const tags = [sai ? `<span class="tag warn">${sai} à faire SAIO</span>` : "",
@@ -448,7 +452,7 @@ function rendre() {
       const aRenvoyer = toutesG.filter(f => !f.fiche && f.cat_ !== "publie" && !f.doublon).length;
       return `<section class="etab${ouvert ? " open" : ""}" data-cle="${esc(g.cle)}">
         <div class="etab-head ligne"><span class="chev">▶</span>
-          <div class="etab-name"><b>${esc(g.nom)}</b><span class="meta">${tot} formation${pl(tot)}</span><span class="contact">${contactHtml(contactDe(g.nom), "")}</span></div>
+          <div class="etab-name"><b>${esc(g.nom)}</b><span class="meta">${nbFormations(fs.length, tot)}</span><span class="contact">${contactHtml(contactDe(g.nom), "")}</span></div>
           <div class="tags">${tagF(g)}${tags}</div><button class="menu-etab" data-menu-etab="${esc(g.nom)}" data-demandes="1" title="Renommer, contact, ajouter une formation…">⋯</button></div>
         <div class="forms"><table class="liste-demandes suivi-etapes">
           <tr><th>Formation</th>${ETAPES.map(et => `<th class="e">${esc(et.nom === "Catalogue national" ? "Catalogue" : et.nom)}</th>`).join("")}<th>Prochaine action</th></tr>
