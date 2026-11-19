@@ -31,7 +31,9 @@ Une nouvelle demande dont l'intitulé correspond à une formation du même étab
 passe en « À faire au SAIO — Vérifier : déjà ouverte en 2025-2026 » (année scolaire de la campagne d'ouverture : d'après la date
 de publication, sinon la campagne précédente), tant que la fiche n'est pas reçue.
 Sous son nom : le n° Parcoursup de la formation ouverte, « voir », « supprimer la demande » ou « ce n'est pas la même »
-(colonne Suivi.Deja_ouverte = NON, créée automatiquement). La fiche n'est pas proposée à l'envoi par mail pour ces demandes.
+(colonne Suivi.Deja_ouverte = NON, créée automatiquement).
+Le bouton « ✓ Vérifiée » (prochaine action) confirme que c'est bien la formation déjà ouverte : la demande sort des « à faire »
+(Deja_ouverte = OUI, « annuler » pour revenir en arrière) et reste visible avec le filtre « Tous », pastille « déjà ouverte ». La fiche n'est pas proposée à l'envoi par mail pour ces demandes.
 La fenêtre « + Nouvelle demande » le signale aussi pendant la saisie.
 
 ## Lignes de l'export

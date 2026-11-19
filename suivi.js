@@ -135,6 +135,8 @@ const estHistorique = r => !!(r.Origine && !r.Mail_recu && !ficheDe(r));
 // Nouvelle demande d'une formation déjà ouverte pour le même établissement (onglet « Formations déjà ouvertes ») :
 // même établissement (nom collé, l'un contenant l'autre) et tous les mots utiles de l'intitulé demandé dans l'intitulé ouvert.
 // Signalée tant que la fiche n'est pas reçue, sauf si le SAIO a indiqué « ce n'est pas la même » (Suivi.Deja_ouverte = « NON »).
+// « Vérifiée » (Suivi.Deja_ouverte = « OUI ») : c'est bien la formation déjà ouverte, suivie dans l'autre onglet ; la demande
+// sort des « à faire » (état « doublon », sans étape à suivre).
 const titreSansSite = t => String(t || "").replace(/\(([^)]*)\)\s*(- en apprentissage)?\s*$/i, "");
 let HIST = { cle: null, liste: [] };
 function formationsOuvertes() {
@@ -268,6 +270,11 @@ function analyser(r, maintenant) {
     const court = [e[3].s === "ko" ? "UAI" : "", e[4].s === "ko" ? "RNCP" : ""].filter(Boolean).join(" et ") + " à corriger";
     return { ...base, cat_: "attente", depuis: ficheJ, motif: court, next: { cls: "wait", titre: ATT, txt: parts.join(" · ") } };
   }
+  if (r.Deja_ouverte === "OUI") {
+    const doublon = doublonDe(r), h = doublon[0];
+    return { ...base, doublon, verifie: true, cat_: "doublon", next: { cls: "wait", titre: "Déjà ouverte, vérifiée",
+      txt: "Suivie dans « Formations déjà ouvertes »" + (h && h.g_ta_cod ? " (n° " + h.g_ta_cod + ")" : "") } };
+  }
   if (!ficheDate) {
     const doublon = doublonDe(r);
     if (doublon.length) return { ...base, doublon, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Vérifier : déjà ouverte en " + anneeOuverture(doublon[0]) } };
@@ -297,7 +304,7 @@ function construire(rows, maintenant = aujourdhui()) {
     if (!groupes.has(k)) groupes.set(k, { cle: k, nom, formations: [] });
     groupes.get(k).formations.push({ r, ...analyser(r, maintenant) });
   }
-  const ordre = { saio: 0, attente: 1, nonpub: 2, publie: 3, parcoursup: 3 };
+  const ordre = { saio: 0, attente: 1, nonpub: 2, publie: 3, parcoursup: 3, doublon: 4 };
   const gs = [...groupes.values()];
   for (const g of gs) g.formations.sort((a, b) => ordre[a.cat_] - ordre[b.cat_] || String(a.r.Formation).localeCompare(String(b.r.Formation)));
   const actif = g => g.formations.some(f => f.cat_ !== "parcoursup");
@@ -443,10 +450,11 @@ function rendre() {
       if (!fs.length) return "";
       // pastilles et nombre : seulement les formations affichées (filtre et recherche), « sur N » quand une partie est masquée
       const tot = toutesG.length, c = k => fs.filter(f => f.cat_ === k).length;
-      const sai = c("saio"), att = c("attente"), fin = c("publie");
+      const sai = c("saio"), att = c("attente"), fin = c("publie"), dbl = c("doublon");
       const pl = k => k > 1 ? "s" : "";
       const tags = [sai ? `<span class="tag warn">${sai} à faire SAIO</span>` : "",
-        att ? `<span class="tag wait">${att} en attente</span>` : "", fin ? `<span class="tag ok">${fin} publiée${pl(fin)}</span>` : ""].join("");
+        att ? `<span class="tag wait">${att} en attente</span>` : "", fin ? `<span class="tag ok">${fin} publiée${pl(fin)}</span>` : "",
+        dbl ? `<span class="tag wait">${dbl} déjà ouverte${pl(dbl)}</span>` : ""].join("");
       const ouvert = ouverts.has(g.cle) || !!q;
       const aEnvoyer = toutesG.filter(f => !f.r.Lien_envoye && !f.fiche && f.cat_ !== "publie" && !f.doublon).length;
       const aRenvoyer = toutesG.filter(f => !f.fiche && f.cat_ !== "publie" && !f.doublon).length;
@@ -550,7 +558,7 @@ function pastille(f) {
 const A_FAIRE = ["à saisir", "à envoyer", "attendue", "à vérifier", "à vérifier", "à vérifier", "à publier"];
 function ligneFormation(f) {
   const r = f.r;
-  const prochaine = ETAPES.findIndex((et, i) => f.e[i].s !== "done");
+  const prochaine = f.verifie ? -1 : ETAPES.findIndex((et, i) => f.e[i].s !== "done");   // vérifiée : plus d'étape à suivre
   const cases = ETAPES.map((et, i) => {
     const st = f.e[i].s;
     let cls = "todo", txt = "—";
@@ -565,7 +573,8 @@ function ligneFormation(f) {
   const couleur = { saio: "warn", attente: "wait", publie: "ok" }[f.cat_] || "wait";
   const titre = f.cat_ === "saio" ? "À faire au SAIO" : f.next.titre;
   const boutons = [f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
-    f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : ""].join(" ");
+    f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : "",
+    f.doublon && f.doublon.length && !f.verifie ? `<button class="btn petit vert" data-verifie="${r.id}" title="C'est bien la formation déjà ouverte : la demande sort des « à faire »">✓ Vérifiée</button>` : ""].join(" ");
   return `<tr class="ligne-f" data-id="${r.id}">
     <td class="f-nom"><div class="f-tete"><b>${esc(r.Formation || "(sans intitulé)")}</b>${boutonMenuF(r, true)}${lienAjoutNote(r)}</div>${sous.length ? `<small>${sous.join(" · ")}</small>` : ""}${ligneDoublon(f)}${noteFermeture(r)}${resumeNotes(r)}</td>
     ${cases}
@@ -576,6 +585,8 @@ function ligneFormation(f) {
 function ligneDoublon(f) {
   if (!f.doublon || !f.doublon.length) return "";
   const h = f.doublon[0];
+  if (f.verifie) return `<div class="doublon-ligne gris" title="Déjà ouverte : ${esc(h.Formation)}">Déjà ouverte en ${anneeOuverture(h)}${h.g_ta_cod ? " (n° " + esc(h.g_ta_cod) + ")" : ""}, vérifiée :
+    <button class="btn-lien" data-voir-ouverte="${esc(h.Etablissement)}">voir</button> · <button class="btn-lien gris" data-annuler-verif="${f.r.id}">annuler</button></div>`;
   return `<div class="doublon-ligne" title="Déjà ouverte : ${esc(h.Formation)}">Déjà ouverte en ${anneeOuverture(h)}${h.g_ta_cod ? " (n° " + esc(h.g_ta_cod) + ")" : ""} :
     <button class="btn-lien" data-voir-ouverte="${esc(h.Etablissement)}">voir</button> · <button class="btn-lien" data-suppr-doublon="${f.r.id}">supprimer la demande</button>
     · <button class="btn-lien gris" data-pas-doublon="${f.r.id}">ce n'est pas la même</button></div>`;
@@ -690,6 +701,8 @@ function brancher(zone) {
   zone.querySelectorAll("[data-fiche]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); voirFiche(Number(b.dataset.fiche)); }));
   zone.querySelectorAll("[data-rappro]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); rapprocher(Number(b.dataset.rappro)); }));
   zone.querySelectorAll("[data-suppr-doublon]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); supprimerFormation(Number(b.dataset.supprDoublon)); }));
+  zone.querySelectorAll("[data-verifie]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); maj(Number(b.dataset.verifie), { Deja_ouverte: "OUI" }); }));
+  zone.querySelectorAll("[data-annuler-verif]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); maj(Number(b.dataset.annulerVerif), { Deja_ouverte: null }); }));
   zone.querySelectorAll("[data-pas-doublon]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); maj(Number(b.dataset.pasDoublon), { Deja_ouverte: "NON" }); }));
   zone.querySelectorAll("[data-voir-ouverte]").forEach(b => b.addEventListener("click", ev => {
     ev.stopPropagation();
@@ -1413,7 +1426,7 @@ async function charger() {
     if (!s) throw new Error("table « Suivi » introuvable ou accès refusé");
     const manquantes = [["Contact_nom", "Contact (nom)"], ["Contact_tel", "Contact (téléphone)"], ["Contact_email", "Contact (mail)"],
       ["Motif_UAI", "Correction UAI demandée"], ["Motif_RNCP", "Correction RNCP demandée"], ["Cle_carif", "Formation de l'export (clé)"], ["Lien_site", "Site de la formation"],
-      ["Deja_ouverte", "Déjà ouverte : NON = ce n'est pas la même"]]
+      ["Deja_ouverte", "Déjà ouverte : OUI = vérifiée, NON = ce n'est pas la même"]]
       .filter(([c]) => !(c in s));
     if (manquantes.length) {
       await grist.docApi.applyUserActions(manquantes.map(([c, l]) => ["AddColumn", "Suivi", c, { type: "Text", label: l, isFormula: false }]));
