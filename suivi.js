@@ -1029,6 +1029,23 @@ async function copierMailRiche(html, texte) {
   return ok;
 }
 
+// Circuit de validation interne : le mail préparé part d'abord vers l'adresse de validation, des agents en copie ;
+// il est transmis à l'établissement une fois validé (son adresse figure dans l'objet).
+// Adresses enregistrées dans la table Parametres (colonnes Mail_validation, Mail_copie), pas dans le code (dépôt public).
+const MAIL_VALIDATION = "saio@ac-bordeaux.fr";
+// « Nom <a@b.fr>, c@d.fr; … » → « a@b.fr,c@d.fr » (sans doublon)
+const listeAdresses = v => [...new Map((String(v || "").match(/[^\s<>,;"']+@[^\s<>,;"']+/g) || []).map(a => [a.toLowerCase(), a])).values()].join(",");
+async function enregistrerAdressesMail(validation, copie) {
+  const champs = {};
+  if (validation !== (PARAM.Mail_validation || MAIL_VALIDATION)) champs.Mail_validation = validation;
+  if (copie !== listeAdresses(PARAM.Mail_copie)) champs.Mail_copie = copie;
+  if (!Object.keys(champs).length) return;
+  Object.assign(PARAM, champs);
+  if (DEMO) return;
+  if (PARAM.id) await actions([["UpdateRecord", "Parametres", PARAM.id, champs]]);
+  else await actions([["AddRecord", "Parametres", null, champs]]);
+}
+
 function preparerMail(etab, idsChoisis, ancre) {
   const k = norm(etab);
   const candidats = ROWS.filter(r => norm(r.Etablissement) === k && !ficheDe(r) && !(r.Origine && !r.Mail_recu) && r.Publiee !== "Publiée" && !doublonDe(r).length);
@@ -1046,7 +1063,12 @@ function preparerMail(etab, idsChoisis, ancre) {
     return;
   }
   pop.innerHTML = `<b>Envoyer la fiche de renseignement — ${esc(etab)}</b>
-    <label>Adresse mail de l'établissement <input id="m-email" type="email" value="${esc(email)}" placeholder="contact@etablissement.fr"></label>
+    <p class="rien">Le mail part d'abord pour validation interne ; il est transmis à l'établissement une fois validé.</p>
+    <label>Envoyer pour validation à <input id="m-valid" type="email" value="${esc(PARAM.Mail_validation || MAIL_VALIDATION)}"></label>
+    <label>En copie <small>(adresses séparées par des virgules, gardées pour les envois suivants)</small>
+      <input id="m-copie" value="${esc(listeAdresses(PARAM.Mail_copie).replace(/,/g, ", "))}" placeholder="prenom.nom@ac-bordeaux.fr, …"></label>
+    <label>Adresse de l'établissement <small>(destinataire après validation, indiquée dans l'objet)</small>
+      <input id="m-email" type="email" value="${esc(email)}" placeholder="contact@etablissement.fr"></label>
     <div><span class="rien">Formations à inclure (une fiche par formation, déjà pré-remplie) :</span>
       ${candidats.map(r => `<label class="case"><input type="checkbox" value="${r.id}" ${choisis.has(r.id) ? "checked" : ""}> ${esc(r.Formation)}${r.Lien_envoye ? ` <span class="rien">(déjà envoyée le ${dateCourte(r.Lien_envoye)})</span>` : ""}</label>`).join("")}</div>
     <div class="pop-btns"><button class="btn" id="m-ok">✉ Préparer le mail</button><button class="btn gris" id="m-date">Déjà envoyé autrement : noter la date</button></div>
@@ -1060,16 +1082,19 @@ function preparerMail(etab, idsChoisis, ancre) {
     if (!l.length) { alert("Cochez au moins une formation."); return; }
     const rows = l.map(id => ROWS.find(r => r.id === id));
     const lien = r => r.Lien_fiche || (PARAM.URL_formulaire || "") + "?Code=" + encodeURIComponent(r.Code || "");
-    const objet = `Référencement Parcoursup en apprentissage - fiche de renseignement - ${etab}`;
+    const valid = listeAdresses(document.getElementById("m-valid").value) || MAIL_VALIDATION, copie = listeAdresses(document.getElementById("m-copie").value);
+    try { await enregistrerAdressesMail(valid, copie); } catch (e) { /* adresses non enregistrées : le mail part quand même */ }
+    const objet = `[À valider] Référencement Parcoursup en apprentissage - fiche de renseignement - ${etab}${adr ? " - à envoyer à " + adr : ""}`;
     const corps = texteMailFiche(rows, contactDe(etab).nom, lien);
     const a = document.createElement("a");
-    a.href = "mailto:" + encodeURIComponent(adr) + "?subject=" + encodeURIComponent(objet) + "&body=" + encodeURIComponent(corps);
+    a.href = "mailto:" + valid.split(",").map(encodeURIComponent).join(",") + "?" + (copie ? "cc=" + copie.split(",").map(encodeURIComponent).join(",") + "&" : "") +
+      "subject=" + encodeURIComponent(objet) + "&body=" + encodeURIComponent(corps);
     a.target = "_blank"; a.rel = "noopener";
     document.body.appendChild(a); a.click(); a.remove();
     // le lien mailto ne transporte que du texte simple : le mail mis en forme (liens sur les mots) se copie ici et se colle dans le mail
     const html = htmlMailFiche(rows, contactDe(etab).nom, lien);
     pop.innerHTML = `<b>Mail préparé — ${esc(etab)}</b>
-      <p class="rien">Le mail s'est ouvert dans votre messagerie, avec les adresses des liens en clair. Pour avoir les liens cliquables sur les mots
+      <p class="rien">Le mail s'est ouvert dans votre messagerie (pour validation à ${esc(valid)}${copie ? ", copie : " + esc(copie.replace(/,/g, ", ")) : ""}), avec les adresses des liens en clair. Pour avoir les liens cliquables sur les mots
         (Carif-Oref, process, catalogue) : copiez le mail mis en forme, puis dans le mail sélectionnez tout le texte (Ctrl+A) et collez (Ctrl+V).
         C'est aussi la solution si le mail est arrivé coupé.</p>
       <div class="apercu-mail">${html}</div>
@@ -1398,6 +1423,11 @@ async function charger() {
     if (manquantesC.length) {
       await grist.docApi.applyUserActions(manquantesC.map(k => ["AddColumn", "Catalogue", k, { type: "Text", label: k, isFormula: false }]));
       for (const k of manquantesC) c[k] = c.id.map(() => null);
+    }
+    const manquantesP = p ? [["Mail_validation", "Mail : envoi pour validation à"], ["Mail_copie", "Mail : en copie"]].filter(([k]) => !(k in p)) : [];
+    if (manquantesP.length) {
+      await grist.docApi.applyUserActions(manquantesP.map(([k, l]) => ["AddColumn", "Parametres", k, { type: "Text", label: l, isFormula: false }]));
+      for (const [k] of manquantesP) p[k] = p.id.map(() => null);
     }
     if (fe && !("Campagne" in fe)) {
       await grist.docApi.applyUserActions([["AddColumn", TABLE_FERMETURES, "Campagne", { type: "Text", label: "Campagne", isFormula: false }]]);
