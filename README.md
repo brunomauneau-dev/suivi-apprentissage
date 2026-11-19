@@ -49,8 +49,8 @@ fait avec cette version.
 ## Mail d'envoi des fiches (validation interne)
 
 « ✉ Envoyer les fiches par mail » prépare le mail pour validation interne : il est adressé à saio@ac-bordeaux.fr
-(modifiable), avec des agents en copie, l'objet commence par « [À valider] » et indique l'adresse de l'établissement,
-à qui le mail est transmis une fois validé. Les adresses de validation et de copie sont enregistrées dans la table
+(modifiable), avec des agents en copie, objet « Référencement Parcoursup en apprentissage - fiche de renseignement -
+établissement » ; il est transmis à l'établissement une fois validé (adresse gardée dans le contact de l'établissement). Les adresses de validation et de copie sont enregistrées dans la table
 Grist « Parametres » (colonnes Mail_validation et Mail_copie, créées automatiquement) depuis la fenêtre d'envoi :
 elles ne figurent pas dans le code, le dépôt étant public.
 

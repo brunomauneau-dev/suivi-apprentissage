@@ -1043,7 +1043,7 @@ async function copierMailRiche(html, texte) {
 }
 
 // Circuit de validation interne : le mail préparé part d'abord vers l'adresse de validation, des agents en copie ;
-// il est transmis à l'établissement une fois validé (son adresse figure dans l'objet).
+// il est transmis à l'établissement une fois validé (son adresse est gardée dans le contact de l'établissement).
 // Adresses enregistrées dans la table Parametres (colonnes Mail_validation, Mail_copie), pas dans le code (dépôt public).
 const MAIL_VALIDATION = "saio@ac-bordeaux.fr";
 // « Nom <a@b.fr>, c@d.fr; … » → « a@b.fr,c@d.fr » (sans doublon)
@@ -1080,7 +1080,7 @@ function preparerMail(etab, idsChoisis, ancre) {
     <label>Envoyer pour validation à <input id="m-valid" type="email" value="${esc(PARAM.Mail_validation || MAIL_VALIDATION)}"></label>
     <label>En copie <small>(adresses séparées par des virgules, gardées pour les envois suivants)</small>
       <input id="m-copie" value="${esc(listeAdresses(PARAM.Mail_copie).replace(/,/g, ", "))}" placeholder="prenom.nom@ac-bordeaux.fr, …"></label>
-    <label>Adresse de l'établissement <small>(destinataire après validation, indiquée dans l'objet)</small>
+    <label>Adresse de l'établissement <small>(destinataire après validation, gardée comme contact)</small>
       <input id="m-email" type="email" value="${esc(email)}" placeholder="contact@etablissement.fr"></label>
     <div><span class="rien">Formations à inclure (une fiche par formation, déjà pré-remplie) :</span>
       ${candidats.map(r => `<label class="case"><input type="checkbox" value="${r.id}" ${choisis.has(r.id) ? "checked" : ""}> ${esc(r.Formation)}${r.Lien_envoye ? ` <span class="rien">(déjà envoyée le ${dateCourte(r.Lien_envoye)})</span>` : ""}</label>`).join("")}</div>
@@ -1097,7 +1097,7 @@ function preparerMail(etab, idsChoisis, ancre) {
     const lien = r => r.Lien_fiche || (PARAM.URL_formulaire || "") + "?Code=" + encodeURIComponent(r.Code || "");
     const valid = listeAdresses(document.getElementById("m-valid").value) || MAIL_VALIDATION, copie = listeAdresses(document.getElementById("m-copie").value);
     try { await enregistrerAdressesMail(valid, copie); } catch (e) { /* adresses non enregistrées : le mail part quand même */ }
-    const objet = `[À valider] Référencement Parcoursup en apprentissage - fiche de renseignement - ${etab}${adr ? " - à envoyer à " + adr : ""}`;
+    const objet = `Référencement Parcoursup en apprentissage - fiche de renseignement - ${etab}`;
     const corps = texteMailFiche(rows, contactDe(etab).nom, lien);
     const a = document.createElement("a");
     a.href = "mailto:" + valid.split(",").map(encodeURIComponent).join(",") + "?" + (copie ? "cc=" + copie.split(",").map(encodeURIComponent).join(",") + "&" : "") +
