@@ -960,54 +960,73 @@ function editerContact(etab, ancre) {
 
 // Prépare dans la messagerie (Thunderbird…) le mail avec les liens des fiches, puis coche « Lien envoyé »
 // Mail aux établissements : informations sur le référencement Parcoursup en apprentissage + liens vers la fiche en ligne
-// (texte du SRAIO ; formule d'appel d'après le contact, année de rentrée calculée)
-function texteMailFiche(rows, contactNom, lien) {
+// (texte du SRAIO ; formule d'appel d'après le contact, année de rentrée calculée).
+// Une seule source, deux rendus : texte simple pour le lien mailto (adresses en clair, « libellé <adresse> »)
+// et HTML à copier-coller, où les liens sont posés sur les mots comme dans le texte d'origine.
+// Blocs : ["p", texte] paragraphe · ["t", texte] rubrique « • » · ["li", texte] condition « – » · ["fiches"] liens des fiches ;
+// liens dans le texte au format [libellé](adresse).
+function blocsMailFiche(contactNom) {
   const c = String(contactNom || "").trim();
   const appel = /^(mme|madame)\b/i.test(c) ? "Madame," : /^(m\.|mr\.?|monsieur)(\s|$)/i.test(c) ? "Monsieur," : "Madame, Monsieur,";
   const an = rentreeCible();
-  return `${appel}
+  return [
+    ["p", appel],
+    ["p", "Nous avons pris connaissance de votre courriel relatif à une demande de référencement sur la plateforme Parcoursup."],
+    ["p", "Vous trouverez ci-dessous les éléments d'information qui seront nécessaires à ce référencement :"],
+    ["t", "Les formations concernées :"],
+    ["p", "Tout d'abord, sachez que l’affichage sur la plateforme Parcoursup des formations en apprentissage, directement accessibles après le baccalauréat, est cadré par le ministère de l’Enseignement supérieur et de la recherche."],
+    ["p", "Les formations référencées sur Parcoursup s’engagent à respecter la Charte de la procédure nationale Parcoursup. Elle a pour objet de définir les règles de fonctionnement communes à l’ensemble des établissements de formation qui participent à la procédure nationale de préinscription Parcoursup. Ces règles de fonctionnement visent à garantir la liberté d’accès, la transparence, la non-discrimination, l’égalité de traitement des candidats et l’équité de la procédure de préinscription Parcoursup."],
+    ["p", "Ceci implique notamment que les candidatures doivent être faites obligatoirement et exclusivement par Parcoursup, qu'il ne peut y avoir en aucun cas de tests de sélection ni d'exigences autres. Seul un entretien d’accompagnement à la recherche d’entreprise est envisageable, en sus du baccalauréat."],
+    ["p", "Par ailleurs, seules les formations en apprentissage sont éligibles à Parcoursup, c’est-à-dire que les contrats de professionnalisation, la formation continue, la VAE, etc. ne peuvent pas être affichés sur Parcoursup."],
+    ["t", "La demande de référencement :"],
+    ["p", "Si vous proposez des formations en apprentissage et que vous souhaitez qu'elles soient référencées sur Parcoursup, certaines conditions sont nécessaires :"],
+    ["li", "D’une part, c’est l’établissement où seront physiquement présents les apprentis qui doit être référencé afin qu’il n’y ait aucune ambiguïté."],
+    ["li", "D’autre part, vos formations d’une durée de 2 ans pour les formations de niveau 5 et de 3 ans pour celles de niveau 6 doivent être affichées sur le catalogue national apprentissage, par le biais de Cap Métiers Nouvelle Aquitaine ([Carif-Oref](https://www.intercariforef.org/referencer-son-offre-de-formation)) selon le [process](https://catalogue-apprentissage.intercariforef.org/vademecum.pdf) indiqué sur le [catalogue des offres de formations en apprentissage](https://catalogue-apprentissage.intercariforef.org/)."],
+    ["t", "Les règles de référencement :"],
+    ["p", `Il faut également que les « dates de formations » soient à jour, c’est-à-dire que le démarrage des formations doit être calé sur le calendrier scolaire et démarrer en septembre et/ou octobre de l’année scolaire concernée. Pour une entrée en ${an} la formation doit donc débuter en septembre et/ou octobre ${an}. Cela suppose donc, si nécessaire, de mettre à jour ces informations via le catalogue du Carif-Oref.`],
+    ["p", "En cas d’affichage, votre site Internet devra très clairement indiquer que pour les formations concernées par cet affichage, le recrutement par la voie de l’apprentissage se fait obligatoirement par Parcoursup car il ne peut en aucun cas y avoir de recrutement en parallèle, et ce quel que soit le profil du candidat car Parcoursup est ouvert à tous les profils (lycéens, en réorientation, non scolarisé, etc…)."],
+    ["p", "Si vos formations concernent l'apprentissage et que les étapes préalables ont été réalisées, vous pouvez compléter la fiche de renseignement en ligne (une par formation) afin que nous puissions expertiser votre demande. Le nom de l'établissement et la formation y sont déjà renseignés :"],
+    ["fiches"],
+    ["p", "Nous vous souhaitons bonne réception de ces éléments."],
+    ["p", "Cordialement,"],
+    ["p", "LE SERVICE REGIONAL ACADEMIQUE DE L’INFORMATION, DE L’ORIENTATION ET DE LA LUTTE CONTRE LE DECROCHAGE SCOLAIRE"],
+    ["p", "5, rue Joseph de Carayon-Latour, CS 81499, 33060 BORDEAUX Cedex\nTél : 05 40 54 71 55\n[www.ac-bordeaux.fr](https://www.ac-bordeaux.fr)"],
+  ];
+}
+const LIEN_MD = /\[([^\]]+)\]\(([^)\s]+)\)/g;
 
-Nous avons pris connaissance de votre courriel relatif à une demande de référencement sur la plateforme Parcoursup.
+function texteMailFiche(rows, contactNom, lien) {
+  const t = x => x.replace(LIEN_MD, (m, l, u) => l === u.replace(/^https?:\/\//, "") ? l : `${l} <${u}>`);
+  return blocsMailFiche(contactNom).map(([k, x]) =>
+    k === "fiches" ? rows.map(r => "- " + r.Formation + " :\n  " + lien(r)).join("\n\n")
+    : k === "t" ? "•  " + t(x) : k === "li" ? "   –  " + t(x) : t(x)).join("\n\n");
+}
 
-Vous trouverez ci-dessous les éléments d'information qui seront nécessaires à ce référencement :
+function htmlMailFiche(rows, contactNom, lien) {
+  const h = x => esc(x).replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, l, u) => `<a href="${u}">${l}</a>`).replace(/\n/g, "<br>");
+  const out = [];
+  for (const [k, x] of blocsMailFiche(contactNom)) {
+    if (k === "li") { if (out.length && out[out.length - 1].startsWith("<ul")) out[out.length - 1] = out[out.length - 1].replace("</ul>", `<li>${h(x)}</li></ul>`); else out.push(`<ul style="list-style-type:'–  '"><li>${h(x)}</li></ul>`); }
+    else if (k === "fiches") out.push(`<ul>${rows.map(r => `<li>${esc(r.Formation)} : <a href="${esc(lien(r))}">compléter la fiche de renseignement</a></li>`).join("")}</ul>`);
+    else out.push(`<p>${k === "t" ? "•&nbsp; " : ""}${h(x)}</p>`);
+  }
+  return `<div style="font-family:Arial,sans-serif;font-size:10pt">${out.join("\n")}</div>`;
+}
 
-•  Les formations concernées :
-
-Tout d'abord, sachez que l’affichage sur la plateforme Parcoursup des formations en apprentissage, directement accessibles après le baccalauréat, est cadré par le ministère de l’Enseignement supérieur et de la recherche.
-
-Les formations référencées sur Parcoursup s’engagent à respecter la Charte de la procédure nationale Parcoursup. Elle a pour objet de définir les règles de fonctionnement communes à l’ensemble des établissements de formation qui participent à la procédure nationale de préinscription Parcoursup. Ces règles de fonctionnement visent à garantir la liberté d’accès, la transparence, la non-discrimination, l’égalité de traitement des candidats et l’équité de la procédure de préinscription Parcoursup.
-
-Ceci implique notamment que les candidatures doivent être faites obligatoirement et exclusivement par Parcoursup, qu'il ne peut y avoir en aucun cas de tests de sélection ni d'exigences autres. Seul un entretien d’accompagnement à la recherche d’entreprise est envisageable, en sus du baccalauréat.
-
-Par ailleurs, seules les formations en apprentissage sont éligibles à Parcoursup, c’est-à-dire que les contrats de professionnalisation, la formation continue, la VAE, etc. ne peuvent pas être affichés sur Parcoursup.
-
-•  La demande de référencement :
-
-Si vous proposez des formations en apprentissage et que vous souhaitez qu'elles soient référencées sur Parcoursup, certaines conditions sont nécessaires :
-
-   –  D’une part, c’est l’établissement où seront physiquement présents les apprentis qui doit être référencé afin qu’il n’y ait aucune ambiguïté.
-
-   –  D’autre part, vos formations d’une durée de 2 ans pour les formations de niveau 5 et de 3 ans pour celles de niveau 6 doivent être affichées sur le catalogue national apprentissage, par le biais de Cap Métiers Nouvelle Aquitaine (Carif-Oref : https://www.intercariforef.org/referencer-son-offre-de-formation) selon le process indiqué (https://catalogue-apprentissage.intercariforef.org/vademecum.pdf) sur le catalogue des offres de formations en apprentissage (https://catalogue-apprentissage.intercariforef.org/).
-
-•  Les règles de référencement :
-
-Il faut également que les « dates de formations » soient à jour, c’est-à-dire que le démarrage des formations doit être calé sur le calendrier scolaire et démarrer en septembre et/ou octobre de l’année scolaire concernée. Pour une entrée en ${an} la formation doit donc débuter en septembre et/ou octobre ${an}. Cela suppose donc, si nécessaire, de mettre à jour ces informations via le catalogue du Carif-Oref.
-
-En cas d’affichage, votre site Internet devra très clairement indiquer que pour les formations concernées par cet affichage, le recrutement par la voie de l’apprentissage se fait obligatoirement par Parcoursup car il ne peut en aucun cas y avoir de recrutement en parallèle, et ce quel que soit le profil du candidat car Parcoursup est ouvert à tous les profils (lycéens, en réorientation, non scolarisé, etc…).
-
-Si vos formations concernent l'apprentissage et que les étapes préalables ont été réalisées, vous pouvez compléter la fiche de renseignement en ligne (une par formation) afin que nous puissions expertiser votre demande. Le nom de l'établissement et la formation y sont déjà renseignés :
-
-${rows.map(r => "- " + r.Formation + " :\n  " + lien(r)).join("\n\n")}
-
-Nous vous souhaitons bonne réception de ces éléments.
-
-Cordialement,
-
-LE SERVICE REGIONAL ACADEMIQUE DE L’INFORMATION, DE L’ORIENTATION ET DE LA LUTTE CONTRE LE DECROCHAGE SCOLAIRE
-
-5, rue Joseph de Carayon-Latour, CS 81499, 33060 BORDEAUX Cedex
-Tél : 05 40 54 71 55
-www.ac-bordeaux.fr`;
+// Copie le mail mis en forme (HTML + texte simple) : presse-papiers moderne si permis, sinon sélection d'une copie invisible
+async function copierMailRiche(html, texte) {
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([texte], { type: "text/plain" }) })]);
+    return true;
+  } catch (e) { /* presse-papiers refusé dans le cadre Grist : on passe par une sélection */ }
+  const div = Object.assign(document.createElement("div"), { innerHTML: html, contentEditable: "true" });
+  Object.assign(div.style, { position: "fixed", left: "-9999px", top: "0" });
+  document.body.appendChild(div);
+  const sel = window.getSelection(), r = document.createRange();
+  r.selectNodeContents(div); sel.removeAllRanges(); sel.addRange(r);
+  let ok = false; try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+  sel.removeAllRanges(); div.remove();
+  return ok;
 }
 
 function preparerMail(etab, idsChoisis, ancre) {
@@ -1047,16 +1066,16 @@ function preparerMail(etab, idsChoisis, ancre) {
     a.href = "mailto:" + encodeURIComponent(adr) + "?subject=" + encodeURIComponent(objet) + "&body=" + encodeURIComponent(corps);
     a.target = "_blank"; a.rel = "noopener";
     document.body.appendChild(a); a.click(); a.remove();
-    // certaines messageries coupent les mails longs ouverts par un lien : le texte complet reste à copier ici
+    // le lien mailto ne transporte que du texte simple : le mail mis en forme (liens sur les mots) se copie ici et se colle dans le mail
+    const html = htmlMailFiche(rows, contactDe(etab).nom, lien);
     pop.innerHTML = `<b>Mail préparé — ${esc(etab)}</b>
-      <p class="rien">Le mail s'est ouvert dans votre messagerie. S'il est incomplet (texte coupé avant les liens), copiez le texte ci-dessous et collez-le à la place.</p>
-      <textarea id="m-texte" rows="8" readonly>${esc(corps)}</textarea>
-      <div class="pop-btns"><button class="btn" id="m-copier">Copier le texte</button><button class="btn gris" id="m-fermer">Fermer</button></div>`;
-    const ta = document.getElementById("m-texte"), cp = document.getElementById("m-copier"), fe = document.getElementById("m-fermer");
-    if (cp) cp.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(corps); } catch (e) { if (ta) { ta.select(); document.execCommand("copy"); } }
-      cp.textContent = "Copié ✓";
-    });
+      <p class="rien">Le mail s'est ouvert dans votre messagerie, avec les adresses des liens en clair. Pour avoir les liens cliquables sur les mots
+        (Carif-Oref, process, catalogue) : copiez le mail mis en forme, puis dans le mail sélectionnez tout le texte (Ctrl+A) et collez (Ctrl+V).
+        C'est aussi la solution si le mail est arrivé coupé.</p>
+      <div class="apercu-mail">${html}</div>
+      <div class="pop-btns"><button class="btn" id="m-copier">Copier le mail mis en forme</button><button class="btn gris" id="m-fermer">Fermer</button></div>`;
+    const cp = document.getElementById("m-copier"), fe = document.getElementById("m-fermer");
+    if (cp) cp.addEventListener("click", async () => { cp.textContent = (await copierMailRiche(html, corps)) ? "Copié ✓ — collez-le dans le mail" : "Copie impossible : sélectionnez l'aperçu et copiez-le"; });
     if (fe) fe.addEventListener("click", fermerPop);
     await bulkMaj(l, { Lien_envoye: aujourdhui(), ...(adr ? { Contact_email: adr } : {}) });
   });
