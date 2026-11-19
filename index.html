@@ -8,9 +8,9 @@
 <script src="lib/xlsx.full.min.js" defer></script>
 <script src="controle.js?v=9" defer></script>
 <script src="notes.js?v=9" defer></script>
-<script src="pdf.js?v=4" defer></script>
+<script src="pdf.js?v=5" defer></script>
 <script src="fermetures.js?v=2" defer></script>
-<script src="suivi.js?v=65" defer></script>
+<script src="suivi.js?v=67" defer></script>
 <style>
   :root {
     --bg: #f6f6f6; --card: #ffffff; --text: #1e1e1e; --muted: #666; --line: #e5e5e5;
@@ -54,7 +54,7 @@
   button.tag.ferm { border: 1px solid var(--amber); background: var(--amber-bg); color: var(--amber); cursor: pointer; font: inherit; font-size: 12px; }
   button.tag.ferm.ko { border-color: var(--red); background: var(--red-bg); color: var(--red); }
   .ferm-ligne { font-size: 12px; color: var(--red); margin-top: 2px; }
-  .doublon-ligne { font-size: 12px; color: var(--amber); margin-top: 2px; } .doublon-ligne .btn-lien { font-size: 12px; }
+  .doublon-ligne { font-size: 12px; color: var(--amber); margin-top: 2px; } .doublon-ligne.gris { color: var(--muted); } .doublon-ligne .btn-lien { font-size: 12px; }
   table.ferm-table td { vertical-align: top; } table.ferm-table tr.meme td { background: var(--red-bg); }
   .forms { display: none; border-top: 1px solid var(--line); }
   .etab.open .forms { display: block; }

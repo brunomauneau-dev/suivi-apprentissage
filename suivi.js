@@ -135,6 +135,8 @@ const estHistorique = r => !!(r.Origine && !r.Mail_recu && !ficheDe(r));
 // Nouvelle demande d'une formation déjà ouverte pour le même établissement (onglet « Formations déjà ouvertes ») :
 // même établissement (nom collé, l'un contenant l'autre) et tous les mots utiles de l'intitulé demandé dans l'intitulé ouvert.
 // Signalée tant que la fiche n'est pas reçue, sauf si le SAIO a indiqué « ce n'est pas la même » (Suivi.Deja_ouverte = « NON »).
+// « Vérifiée » (Suivi.Deja_ouverte = « OUI ») : c'est bien la formation déjà ouverte, suivie dans l'autre onglet ; la demande
+// sort des « à faire » (état « doublon », sans étape à suivre).
 const titreSansSite = t => String(t || "").replace(/\(([^)]*)\)\s*(- en apprentissage)?\s*$/i, "");
 let HIST = { cle: null, liste: [] };
 function formationsOuvertes() {
@@ -268,6 +270,11 @@ function analyser(r, maintenant) {
     const court = [e[3].s === "ko" ? "UAI" : "", e[4].s === "ko" ? "RNCP" : ""].filter(Boolean).join(" et ") + " à corriger";
     return { ...base, cat_: "attente", depuis: ficheJ, motif: court, next: { cls: "wait", titre: ATT, txt: parts.join(" · ") } };
   }
+  if (r.Deja_ouverte === "OUI") {
+    const doublon = doublonDe(r), h = doublon[0];
+    return { ...base, doublon, verifie: true, cat_: "doublon", next: { cls: "wait", titre: "Déjà ouverte, vérifiée",
+      txt: "Suivie dans « Formations déjà ouvertes »" + (h && h.g_ta_cod ? " (n° " + h.g_ta_cod + ")" : "") } };
+  }
   if (!ficheDate) {
     const doublon = doublonDe(r);
     if (doublon.length) return { ...base, doublon, cat_: "saio", next: { cls: "warn", titre: "À faire au SAIO", txt: "Vérifier : déjà ouverte en " + anneeOuverture(doublon[0]) } };
@@ -297,7 +304,7 @@ function construire(rows, maintenant = aujourdhui()) {
     if (!groupes.has(k)) groupes.set(k, { cle: k, nom, formations: [] });
     groupes.get(k).formations.push({ r, ...analyser(r, maintenant) });
   }
-  const ordre = { saio: 0, attente: 1, nonpub: 2, publie: 3, parcoursup: 3 };
+  const ordre = { saio: 0, attente: 1, nonpub: 2, publie: 3, parcoursup: 3, doublon: 4 };
   const gs = [...groupes.values()];
   for (const g of gs) g.formations.sort((a, b) => ordre[a.cat_] - ordre[b.cat_] || String(a.r.Formation).localeCompare(String(b.r.Formation)));
   const actif = g => g.formations.some(f => f.cat_ !== "parcoursup");
@@ -443,10 +450,11 @@ function rendre() {
       if (!fs.length) return "";
       // pastilles et nombre : seulement les formations affichées (filtre et recherche), « sur N » quand une partie est masquée
       const tot = toutesG.length, c = k => fs.filter(f => f.cat_ === k).length;
-      const sai = c("saio"), att = c("attente"), fin = c("publie");
+      const sai = c("saio"), att = c("attente"), fin = c("publie"), dbl = c("doublon");
       const pl = k => k > 1 ? "s" : "";
       const tags = [sai ? `<span class="tag warn">${sai} à faire SAIO</span>` : "",
-        att ? `<span class="tag wait">${att} en attente</span>` : "", fin ? `<span class="tag ok">${fin} publiée${pl(fin)}</span>` : ""].join("");
+        att ? `<span class="tag wait">${att} en attente</span>` : "", fin ? `<span class="tag ok">${fin} publiée${pl(fin)}</span>` : "",
+        dbl ? `<span class="tag wait">${dbl} déjà ouverte${pl(dbl)}</span>` : ""].join("");
       const ouvert = ouverts.has(g.cle) || !!q;
       const aEnvoyer = toutesG.filter(f => !f.r.Lien_envoye && !f.fiche && f.cat_ !== "publie" && !f.doublon).length;
       const aRenvoyer = toutesG.filter(f => !f.fiche && f.cat_ !== "publie" && !f.doublon).length;
@@ -550,7 +558,7 @@ function pastille(f) {
 const A_FAIRE = ["à saisir", "à envoyer", "attendue", "à vérifier", "à vérifier", "à vérifier", "à publier"];
 function ligneFormation(f) {
   const r = f.r;
-  const prochaine = ETAPES.findIndex((et, i) => f.e[i].s !== "done");
+  const prochaine = f.verifie ? -1 : ETAPES.findIndex((et, i) => f.e[i].s !== "done");   // vérifiée : plus d'étape à suivre
   const cases = ETAPES.map((et, i) => {
     const st = f.e[i].s;
     let cls = "todo", txt = "—";
@@ -565,7 +573,8 @@ function ligneFormation(f) {
   const couleur = { saio: "warn", attente: "wait", publie: "ok" }[f.cat_] || "wait";
   const titre = f.cat_ === "saio" ? "À faire au SAIO" : f.next.titre;
   const boutons = [f.fiche ? `<button class="btn petit" data-fiche="${r.id}">Voir la fiche</button>` : "",
-    f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : ""].join(" ");
+    f.rappro ? `<button class="btn petit" data-rappro="${r.id}">Retrouver dans l'export</button>` : "",
+    f.doublon && f.doublon.length && !f.verifie ? `<button class="btn petit vert" data-verifie="${r.id}" title="C'est bien la formation déjà ouverte : la demande sort des « à faire »">✓ Vérifiée</button>` : ""].join(" ");
   return `<tr class="ligne-f" data-id="${r.id}">
     <td class="f-nom"><div class="f-tete"><b>${esc(r.Formation || "(sans intitulé)")}</b>${boutonMenuF(r, true)}${lienAjoutNote(r)}</div>${sous.length ? `<small>${sous.join(" · ")}</small>` : ""}${ligneDoublon(f)}${noteFermeture(r)}${resumeNotes(r)}</td>
     ${cases}
@@ -576,6 +585,8 @@ function ligneFormation(f) {
 function ligneDoublon(f) {
   if (!f.doublon || !f.doublon.length) return "";
   const h = f.doublon[0];
+  if (f.verifie) return `<div class="doublon-ligne gris" title="Déjà ouverte : ${esc(h.Formation)}">Déjà ouverte en ${anneeOuverture(h)}${h.g_ta_cod ? " (n° " + esc(h.g_ta_cod) + ")" : ""}, vérifiée :
+    <button class="btn-lien" data-voir-ouverte="${esc(h.Etablissement)}">voir</button> · <button class="btn-lien gris" data-annuler-verif="${f.r.id}">annuler</button></div>`;
   return `<div class="doublon-ligne" title="Déjà ouverte : ${esc(h.Formation)}">Déjà ouverte en ${anneeOuverture(h)}${h.g_ta_cod ? " (n° " + esc(h.g_ta_cod) + ")" : ""} :
     <button class="btn-lien" data-voir-ouverte="${esc(h.Etablissement)}">voir</button> · <button class="btn-lien" data-suppr-doublon="${f.r.id}">supprimer la demande</button>
     · <button class="btn-lien gris" data-pas-doublon="${f.r.id}">ce n'est pas la même</button></div>`;
@@ -690,6 +701,8 @@ function brancher(zone) {
   zone.querySelectorAll("[data-fiche]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); voirFiche(Number(b.dataset.fiche)); }));
   zone.querySelectorAll("[data-rappro]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); rapprocher(Number(b.dataset.rappro)); }));
   zone.querySelectorAll("[data-suppr-doublon]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); supprimerFormation(Number(b.dataset.supprDoublon)); }));
+  zone.querySelectorAll("[data-verifie]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); maj(Number(b.dataset.verifie), { Deja_ouverte: "OUI" }); }));
+  zone.querySelectorAll("[data-annuler-verif]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); maj(Number(b.dataset.annulerVerif), { Deja_ouverte: null }); }));
   zone.querySelectorAll("[data-pas-doublon]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); maj(Number(b.dataset.pasDoublon), { Deja_ouverte: "NON" }); }));
   zone.querySelectorAll("[data-voir-ouverte]").forEach(b => b.addEventListener("click", ev => {
     ev.stopPropagation();
@@ -1029,6 +1042,23 @@ async function copierMailRiche(html, texte) {
   return ok;
 }
 
+// Circuit de validation interne : le mail préparé part d'abord vers l'adresse de validation, des agents en copie ;
+// il est transmis à l'établissement une fois validé (son adresse figure dans l'objet).
+// Adresses enregistrées dans la table Parametres (colonnes Mail_validation, Mail_copie), pas dans le code (dépôt public).
+const MAIL_VALIDATION = "saio@ac-bordeaux.fr";
+// « Nom <a@b.fr>, c@d.fr; … » → « a@b.fr,c@d.fr » (sans doublon)
+const listeAdresses = v => [...new Map((String(v || "").match(/[^\s<>,;"']+@[^\s<>,;"']+/g) || []).map(a => [a.toLowerCase(), a])).values()].join(",");
+async function enregistrerAdressesMail(validation, copie) {
+  const champs = {};
+  if (validation !== (PARAM.Mail_validation || MAIL_VALIDATION)) champs.Mail_validation = validation;
+  if (copie !== listeAdresses(PARAM.Mail_copie)) champs.Mail_copie = copie;
+  if (!Object.keys(champs).length) return;
+  Object.assign(PARAM, champs);
+  if (DEMO) return;
+  if (PARAM.id) await actions([["UpdateRecord", "Parametres", PARAM.id, champs]]);
+  else await actions([["AddRecord", "Parametres", null, champs]]);
+}
+
 function preparerMail(etab, idsChoisis, ancre) {
   const k = norm(etab);
   const candidats = ROWS.filter(r => norm(r.Etablissement) === k && !ficheDe(r) && !(r.Origine && !r.Mail_recu) && r.Publiee !== "Publiée" && !doublonDe(r).length);
@@ -1046,7 +1076,12 @@ function preparerMail(etab, idsChoisis, ancre) {
     return;
   }
   pop.innerHTML = `<b>Envoyer la fiche de renseignement — ${esc(etab)}</b>
-    <label>Adresse mail de l'établissement <input id="m-email" type="email" value="${esc(email)}" placeholder="contact@etablissement.fr"></label>
+    <p class="rien">Le mail part d'abord pour validation interne ; il est transmis à l'établissement une fois validé.</p>
+    <label>Envoyer pour validation à <input id="m-valid" type="email" value="${esc(PARAM.Mail_validation || MAIL_VALIDATION)}"></label>
+    <label>En copie <small>(adresses séparées par des virgules, gardées pour les envois suivants)</small>
+      <input id="m-copie" value="${esc(listeAdresses(PARAM.Mail_copie).replace(/,/g, ", "))}" placeholder="prenom.nom@ac-bordeaux.fr, …"></label>
+    <label>Adresse de l'établissement <small>(destinataire après validation, indiquée dans l'objet)</small>
+      <input id="m-email" type="email" value="${esc(email)}" placeholder="contact@etablissement.fr"></label>
     <div><span class="rien">Formations à inclure (une fiche par formation, déjà pré-remplie) :</span>
       ${candidats.map(r => `<label class="case"><input type="checkbox" value="${r.id}" ${choisis.has(r.id) ? "checked" : ""}> ${esc(r.Formation)}${r.Lien_envoye ? ` <span class="rien">(déjà envoyée le ${dateCourte(r.Lien_envoye)})</span>` : ""}</label>`).join("")}</div>
     <div class="pop-btns"><button class="btn" id="m-ok">✉ Préparer le mail</button><button class="btn gris" id="m-date">Déjà envoyé autrement : noter la date</button></div>
@@ -1060,16 +1095,19 @@ function preparerMail(etab, idsChoisis, ancre) {
     if (!l.length) { alert("Cochez au moins une formation."); return; }
     const rows = l.map(id => ROWS.find(r => r.id === id));
     const lien = r => r.Lien_fiche || (PARAM.URL_formulaire || "") + "?Code=" + encodeURIComponent(r.Code || "");
-    const objet = `Référencement Parcoursup en apprentissage - fiche de renseignement - ${etab}`;
+    const valid = listeAdresses(document.getElementById("m-valid").value) || MAIL_VALIDATION, copie = listeAdresses(document.getElementById("m-copie").value);
+    try { await enregistrerAdressesMail(valid, copie); } catch (e) { /* adresses non enregistrées : le mail part quand même */ }
+    const objet = `[À valider] Référencement Parcoursup en apprentissage - fiche de renseignement - ${etab}${adr ? " - à envoyer à " + adr : ""}`;
     const corps = texteMailFiche(rows, contactDe(etab).nom, lien);
     const a = document.createElement("a");
-    a.href = "mailto:" + encodeURIComponent(adr) + "?subject=" + encodeURIComponent(objet) + "&body=" + encodeURIComponent(corps);
+    a.href = "mailto:" + valid.split(",").map(encodeURIComponent).join(",") + "?" + (copie ? "cc=" + copie.split(",").map(encodeURIComponent).join(",") + "&" : "") +
+      "subject=" + encodeURIComponent(objet) + "&body=" + encodeURIComponent(corps);
     a.target = "_blank"; a.rel = "noopener";
     document.body.appendChild(a); a.click(); a.remove();
     // le lien mailto ne transporte que du texte simple : le mail mis en forme (liens sur les mots) se copie ici et se colle dans le mail
     const html = htmlMailFiche(rows, contactDe(etab).nom, lien);
     pop.innerHTML = `<b>Mail préparé — ${esc(etab)}</b>
-      <p class="rien">Le mail s'est ouvert dans votre messagerie, avec les adresses des liens en clair. Pour avoir les liens cliquables sur les mots
+      <p class="rien">Le mail s'est ouvert dans votre messagerie (pour validation à ${esc(valid)}${copie ? ", copie : " + esc(copie.replace(/,/g, ", ")) : ""}), avec les adresses des liens en clair. Pour avoir les liens cliquables sur les mots
         (Carif-Oref, process, catalogue) : copiez le mail mis en forme, puis dans le mail sélectionnez tout le texte (Ctrl+A) et collez (Ctrl+V).
         C'est aussi la solution si le mail est arrivé coupé.</p>
       <div class="apercu-mail">${html}</div>
@@ -1388,7 +1426,7 @@ async function charger() {
     if (!s) throw new Error("table « Suivi » introuvable ou accès refusé");
     const manquantes = [["Contact_nom", "Contact (nom)"], ["Contact_tel", "Contact (téléphone)"], ["Contact_email", "Contact (mail)"],
       ["Motif_UAI", "Correction UAI demandée"], ["Motif_RNCP", "Correction RNCP demandée"], ["Cle_carif", "Formation de l'export (clé)"], ["Lien_site", "Site de la formation"],
-      ["Deja_ouverte", "Déjà ouverte : NON = ce n'est pas la même"]]
+      ["Deja_ouverte", "Déjà ouverte : OUI = vérifiée, NON = ce n'est pas la même"]]
       .filter(([c]) => !(c in s));
     if (manquantes.length) {
       await grist.docApi.applyUserActions(manquantes.map(([c, l]) => ["AddColumn", "Suivi", c, { type: "Text", label: l, isFormula: false }]));
@@ -1398,6 +1436,11 @@ async function charger() {
     if (manquantesC.length) {
       await grist.docApi.applyUserActions(manquantesC.map(k => ["AddColumn", "Catalogue", k, { type: "Text", label: k, isFormula: false }]));
       for (const k of manquantesC) c[k] = c.id.map(() => null);
+    }
+    const manquantesP = p ? [["Mail_validation", "Mail : envoi pour validation à"], ["Mail_copie", "Mail : en copie"]].filter(([k]) => !(k in p)) : [];
+    if (manquantesP.length) {
+      await grist.docApi.applyUserActions(manquantesP.map(([k, l]) => ["AddColumn", "Parametres", k, { type: "Text", label: l, isFormula: false }]));
+      for (const [k] of manquantesP) p[k] = p.id.map(() => null);
     }
     if (fe && !("Campagne" in fe)) {
       await grist.docApi.applyUserActions([["AddColumn", TABLE_FERMETURES, "Campagne", { type: "Text", label: "Campagne", isFormula: false }]]);

@@ -40,7 +40,7 @@ function groupesAffiches() {
   const q = norm(recherche);
   const dansOnglet = f => !!f.historique === (onglet === "ouvertes");
   const garde = (g, f) => (filtre === "tous" || f.cat_ === filtre) && (!q || norm(g.nom).includes(q) || norm(f.r.Formation).includes(q) || norm(f.r.Lieu).includes(q));
-  const ordre = { saio: 0, attente: 1, nonpub: 2, parcoursup: 3, publie: 3 };
+  const ordre = { saio: 0, attente: 1, nonpub: 2, parcoursup: 3, publie: 3, doublon: 4 };
   return construire(ROWS).map(g => ({ ...g, ferm: fermeturesDuGroupe(g), tot: g.formations.filter(dansOnglet).length,
     formations: g.formations.filter(f => dansOnglet(f) && garde(g, f))
       .sort((a, b) => ordre[a.cat_] - ordre[b.cat_] || String(a.r.Formation).localeCompare(String(b.r.Formation))) }))
@@ -76,7 +76,7 @@ function tableDemandes() {
     const vig = ligneVigilance(g.ferm); if (vig) corps.push(vig);
     for (const f of g.formations) {
       n++;
-      const r = f.r, prochaine = ETAPES.findIndex((et, i) => f.e[i].s !== "done");
+      const r = f.r, prochaine = f.verifie ? -1 : ETAPES.findIndex((et, i) => f.e[i].s !== "done");
       const cases = ETAPES.map((et, i) => {
         const s = f.e[i].s;
         if (s === "done") return cel(f.e[i].t || "OK", "ok", { halign: "center" });

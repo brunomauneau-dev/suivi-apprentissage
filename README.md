@@ -31,7 +31,9 @@ Une nouvelle demande dont l'intitulé correspond à une formation du même étab
 passe en « À faire au SAIO — Vérifier : déjà ouverte en 2025-2026 » (année scolaire de la campagne d'ouverture : d'après la date
 de publication, sinon la campagne précédente), tant que la fiche n'est pas reçue.
 Sous son nom : le n° Parcoursup de la formation ouverte, « voir », « supprimer la demande » ou « ce n'est pas la même »
-(colonne Suivi.Deja_ouverte = NON, créée automatiquement). La fiche n'est pas proposée à l'envoi par mail pour ces demandes.
+(colonne Suivi.Deja_ouverte = NON, créée automatiquement).
+Le bouton « ✓ Vérifiée » (prochaine action) confirme que c'est bien la formation déjà ouverte : la demande sort des « à faire »
+(Deja_ouverte = OUI, « annuler » pour revenir en arrière) et reste visible avec le filtre « Tous », pastille « déjà ouverte ». La fiche n'est pas proposée à l'envoi par mail pour ces demandes.
 La fenêtre « + Nouvelle demande » le signale aussi pendant la saisie.
 
 ## Lignes de l'export
@@ -43,6 +45,14 @@ toutes ses lignes du fichier Excel (une par session, toutes les colonnes non vid
 Ces lignes sont enregistrées à chaque import dans la table Grist `Export_lignes` (créée automatiquement, une ligne par formation),
 lue seulement à la demande : le chargement du widget n'est pas ralenti. Elles ne sont disponibles qu'après un premier import
 fait avec cette version.
+
+## Mail d'envoi des fiches (validation interne)
+
+« ✉ Envoyer les fiches par mail » prépare le mail pour validation interne : il est adressé à saio@ac-bordeaux.fr
+(modifiable), avec des agents en copie, l'objet commence par « [À valider] » et indique l'adresse de l'établissement,
+à qui le mail est transmis une fois validé. Les adresses de validation et de copie sont enregistrées dans la table
+Grist « Parametres » (colonnes Mail_validation et Mail_copie, créées automatiquement) depuis la fenêtre d'envoi :
+elles ne figurent pas dans le code, le dépôt étant public.
 
 ## Fermetures sur Parcoursup (vigilance)
 
