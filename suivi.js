@@ -959,6 +959,57 @@ function editerContact(etab, ancre) {
 }
 
 // Prépare dans la messagerie (Thunderbird…) le mail avec les liens des fiches, puis coche « Lien envoyé »
+// Mail aux établissements : informations sur le référencement Parcoursup en apprentissage + liens vers la fiche en ligne
+// (texte du SRAIO ; formule d'appel d'après le contact, année de rentrée calculée)
+function texteMailFiche(rows, contactNom, lien) {
+  const c = String(contactNom || "").trim();
+  const appel = /^(mme|madame)\b/i.test(c) ? "Madame," : /^(m\.|mr\.?|monsieur)(\s|$)/i.test(c) ? "Monsieur," : "Madame, Monsieur,";
+  const an = rentreeCible();
+  return `${appel}
+
+Nous avons pris connaissance de votre courriel relatif à une demande de référencement sur la plateforme Parcoursup.
+
+Vous trouverez ci-dessous les éléments d'information qui seront nécessaires à ce référencement :
+
+•  Les formations concernées :
+
+Tout d'abord, sachez que l’affichage sur la plateforme Parcoursup des formations en apprentissage, directement accessibles après le baccalauréat, est cadré par le ministère de l’Enseignement supérieur et de la recherche.
+
+Les formations référencées sur Parcoursup s’engagent à respecter la Charte de la procédure nationale Parcoursup. Elle a pour objet de définir les règles de fonctionnement communes à l’ensemble des établissements de formation qui participent à la procédure nationale de préinscription Parcoursup. Ces règles de fonctionnement visent à garantir la liberté d’accès, la transparence, la non-discrimination, l’égalité de traitement des candidats et l’équité de la procédure de préinscription Parcoursup.
+
+Ceci implique notamment que les candidatures doivent être faites obligatoirement et exclusivement par Parcoursup, qu'il ne peut y avoir en aucun cas de tests de sélection ni d'exigences autres. Seul un entretien d’accompagnement à la recherche d’entreprise est envisageable, en sus du baccalauréat.
+
+Par ailleurs, seules les formations en apprentissage sont éligibles à Parcoursup, c’est-à-dire que les contrats de professionnalisation, la formation continue, la VAE, etc. ne peuvent pas être affichés sur Parcoursup.
+
+•  La demande de référencement :
+
+Si vous proposez des formations en apprentissage et que vous souhaitez qu'elles soient référencées sur Parcoursup, certaines conditions sont nécessaires :
+
+   –  D’une part, c’est l’établissement où seront physiquement présents les apprentis qui doit être référencé afin qu’il n’y ait aucune ambiguïté.
+
+   –  D’autre part, vos formations d’une durée de 2 ans pour les formations de niveau 5 et de 3 ans pour celles de niveau 6 doivent être affichées sur le catalogue national apprentissage, par le biais de Cap Métiers Nouvelle Aquitaine (Carif-Oref : https://www.intercariforef.org/referencer-son-offre-de-formation) selon le process indiqué (https://catalogue-apprentissage.intercariforef.org/vademecum.pdf) sur le catalogue des offres de formations en apprentissage (https://catalogue-apprentissage.intercariforef.org/).
+
+•  Les règles de référencement :
+
+Il faut également que les « dates de formations » soient à jour, c’est-à-dire que le démarrage des formations doit être calé sur le calendrier scolaire et démarrer en septembre et/ou octobre de l’année scolaire concernée. Pour une entrée en ${an} la formation doit donc débuter en septembre et/ou octobre ${an}. Cela suppose donc, si nécessaire, de mettre à jour ces informations via le catalogue du Carif-Oref.
+
+En cas d’affichage, votre site Internet devra très clairement indiquer que pour les formations concernées par cet affichage, le recrutement par la voie de l’apprentissage se fait obligatoirement par Parcoursup car il ne peut en aucun cas y avoir de recrutement en parallèle, et ce quel que soit le profil du candidat car Parcoursup est ouvert à tous les profils (lycéens, en réorientation, non scolarisé, etc…).
+
+Si vos formations concernent l'apprentissage et que les étapes préalables ont été réalisées, vous pouvez compléter la fiche de renseignement en ligne (une par formation) afin que nous puissions expertiser votre demande. Le nom de l'établissement et la formation y sont déjà renseignés :
+
+${rows.map(r => "- " + r.Formation + " :\n  " + lien(r)).join("\n\n")}
+
+Nous vous souhaitons bonne réception de ces éléments.
+
+Cordialement,
+
+LE SERVICE REGIONAL ACADEMIQUE DE L’INFORMATION, DE L’ORIENTATION ET DE LA LUTTE CONTRE LE DECROCHAGE SCOLAIRE
+
+5, rue Joseph de Carayon-Latour, CS 81499, 33060 BORDEAUX Cedex
+Tél : 05 40 54 71 55
+www.ac-bordeaux.fr`;
+}
+
 function preparerMail(etab, idsChoisis, ancre) {
   const k = norm(etab);
   const candidats = ROWS.filter(r => norm(r.Etablissement) === k && !ficheDe(r) && !(r.Origine && !r.Mail_recu) && r.Publiee !== "Publiée" && !doublonDe(r).length);
@@ -991,21 +1042,22 @@ function preparerMail(etab, idsChoisis, ancre) {
     const rows = l.map(id => ROWS.find(r => r.id === id));
     const lien = r => r.Lien_fiche || (PARAM.URL_formulaire || "") + "?Code=" + encodeURIComponent(r.Code || "");
     const objet = `Référencement Parcoursup en apprentissage - fiche de renseignement - ${etab}`;
-    const corps = `Bonjour,
-
-Pour donner suite à votre demande de référencement sur Parcoursup, merci de compléter la fiche de renseignement en ligne, une fiche par formation, en utilisant les liens ci-dessous (le nom de l'établissement et la formation sont déjà renseignés) :
-
-${rows.map(r => "- " + r.Formation + " :\n  " + lien(r)).join("\n\n")}
-
-Nous restons à votre disposition pour toute question.
-
-Cordialement,
-SAIO - Académie de Bordeaux`;
+    const corps = texteMailFiche(rows, contactDe(etab).nom, lien);
     const a = document.createElement("a");
     a.href = "mailto:" + encodeURIComponent(adr) + "?subject=" + encodeURIComponent(objet) + "&body=" + encodeURIComponent(corps);
     a.target = "_blank"; a.rel = "noopener";
     document.body.appendChild(a); a.click(); a.remove();
-    fermerPop();
+    // certaines messageries coupent les mails longs ouverts par un lien : le texte complet reste à copier ici
+    pop.innerHTML = `<b>Mail préparé — ${esc(etab)}</b>
+      <p class="rien">Le mail s'est ouvert dans votre messagerie. S'il est incomplet (texte coupé avant les liens), copiez le texte ci-dessous et collez-le à la place.</p>
+      <textarea id="m-texte" rows="8" readonly>${esc(corps)}</textarea>
+      <div class="pop-btns"><button class="btn" id="m-copier">Copier le texte</button><button class="btn gris" id="m-fermer">Fermer</button></div>`;
+    const ta = document.getElementById("m-texte"), cp = document.getElementById("m-copier"), fe = document.getElementById("m-fermer");
+    if (cp) cp.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(corps); } catch (e) { if (ta) { ta.select(); document.execCommand("copy"); } }
+      cp.textContent = "Copié ✓";
+    });
+    if (fe) fe.addEventListener("click", fermerPop);
     await bulkMaj(l, { Lien_envoye: aujourdhui(), ...(adr ? { Contact_email: adr } : {}) });
   });
 }
