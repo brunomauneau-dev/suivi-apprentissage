@@ -76,6 +76,8 @@ Signalement, pour surveiller les établissements avant d'ouvrir de nouvelles for
 Dossier `thunderbird/` (paquet prêt à installer : `suivi-apprentissage-thunderbird.xpi`).
 Sur un mail ouvert, le bouton « Ajouter au suivi » lit l'expéditeur, la date, la signature et les formations citées,
 puis ajoute les formations dans la table `Suivi` du document Grist (API, clé personnelle saisie dans les réglages du module).
+Le formulaire s'ouvre dans une petite fenêtre séparée (version 1.4) : elle reste ouverte quand on clique dans le mail pour y chercher
+un téléphone ou une adresse ; un nouveau clic sur le bouton la remplace par celle du mail affiché.
 Installation : Thunderbird → Modules et thèmes → roue dentée → « Installer un module depuis un fichier… » → le fichier .xpi.
 
 ## À faire

@@ -1,4 +1,4 @@
-// Fenêtre du bouton « Ajouter au suivi » : lit le mail affiché, pré-remplit la demande, l'envoie dans la table Suivi de Grist.
+// Fenêtre du bouton « Ajouter au suivi » (fenêtre séparée, qui reste ouverte quand on clique dans le mail) : lit le mail affiché, pré-remplit la demande, l'envoie dans la table Suivi de Grist.
 
 const zone = document.getElementById("zone");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -19,6 +19,12 @@ function texteDuMail(partie) {
 }
 
 async function mailAffiche() {
+  // fenêtre séparée : le mail est désigné par son identifiant, transmis par le bouton (background.js)
+  const id = Number(new URLSearchParams(location.search).get("message"));
+  if (id) {
+    const [entete, complet] = await Promise.all([browser.messages.get(id), browser.messages.getFull(id)]);
+    return { entete, ...texteDuMail(complet) };
+  }
   const [onglet] = await browser.tabs.query({ active: true, currentWindow: true });
   let m = null;
   if (browser.messageDisplay.getDisplayedMessages) {
