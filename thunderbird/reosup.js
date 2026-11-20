@@ -71,11 +71,11 @@ function reosupLigneDepuisId(lignes, id) {
 
 async function reosupReglages() {
   const g = await reglages();   // serveur et clé : ceux du module (grist.js)
-  const r = await browser.storage.local.get(["reosup_document", "reosup_actif", "reosup_minutes", "reosup_premiere_ligne", "reosup_expediteur"]);
+  const r = await browser.storage.local.get(["reosup_document", "reosup_actif", "reosup_minutes", "reosup_premier_id", "reosup_premiere_ligne", "reosup_expediteur"]);
   return {
     serveur: g.serveur, cle: g.cle, document: r.reosup_document || "",
     actif: !!r.reosup_actif, minutes: Number(r.reosup_minutes) || 5,
-    premierId: Number(r.reosup_premier_id) || 0, expediteur: (r.reosup_expediteur || "").trim().toLowerCase(),
+    premierId: Number(r.reosup_premier_id) || Number(r.reosup_premiere_ligne) || 0, expediteur: (r.reosup_expediteur || "").trim().toLowerCase(),
   };
 }
 

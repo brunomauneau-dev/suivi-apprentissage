@@ -80,7 +80,7 @@ Le formulaire s'ouvre dans une petite fenêtre séparée (version 1.4) : elle re
 un téléphone ou une adresse ; un nouveau clic sur le bouton la remplace par celle du mail affiché.
 Installation : Thunderbird → Modules et thèmes → roue dentée → « Installer un module depuis un fichier… » → le fichier .xpi.
 
-### REOSUP IUT : accusés de réception et référents (version 1.6)
+### REOSUP IUT : accusés de réception et référents (version 1.6.1)
 
 Le module surveille aussi le document Grist *REOSUP-IUT* (réglages du module → section « REOSUP IUT »), toutes les N minutes tant que Thunderbird est ouvert.
 Pour chaque nouveau candidat ayant choisi un BUT, à partir de la « première ligne à traiter » (numéro affiché à gauche dans Grist ;
