@@ -29,14 +29,38 @@ $("enregistrer").onclick = async () => {
 // ——— REOSUP IUT ———
 const echapper = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 (async () => {
-  const r = await browser.storage.local.get(["reosup_adresse", "reosup_document", "reosup_expediteur", "reosup_minutes", "reosup_premiere_ligne", "reosup_actif", "reosup_bilan"]);
+  const r = await browser.storage.local.get(["reosup_adresse", "reosup_document", "reosup_expediteur", "reosup_minutes", "reosup_premier_id", "reosup_premiere_ligne", "reosup_actif", "reosup_bilan"]);
   $("r_doc").value = r.reosup_adresse || r.reosup_document || "";
   $("r_exp").value = r.reosup_expediteur || "";
   $("r_min").value = r.reosup_minutes || 5;
-  $("r_ligne").value = r.reosup_premiere_ligne || "";
   $("r_actif").checked = !!r.reosup_actif;
   if (r.reosup_bilan) $("r_resultat").innerHTML = afficherBilan(r.reosup_bilan, "Dernier passage");
+  // version 1.5 : le réglage était un identifiant interne
+  const premierId = Number(r.reosup_premier_id) || Number(r.reosup_premiere_ligne) || 0;
+  if (premierId && r.reosup_document) {
+    try {
+      const lignes = await reosupLignes({ ...(await reglages()), document: r.reosup_document });
+      const l = reosupLigneDepuisId(lignes, premierId);
+      $("r_ligne").value = l ? l.numero : lignes.length + 1;
+    } catch (e) { /* document injoignable : le champ reste vide */ }
+  }
+  majNomLigne();
 })();
+
+// Sous le champ : le candidat qui se trouve à ce numéro (pour confirmer)
+let lignesCache = null;
+async function majNomLigne() {
+  const n = Number($("r_ligne").value) || 0, doc = idDocument($("r_doc").value);
+  const aide = $("r_ligne_nom");
+  if (!n || !doc) { aide.textContent = ""; return; }
+  try {
+    if (!lignesCache || lignesCache.doc !== doc) lignesCache = { doc, lignes: await reosupLignes({ ...(await reglages()), document: doc }) };
+    const l = lignesCache.lignes[n - 1];
+    aide.textContent = l ? `→ ligne ${n} : ${reosupNomCandidat(l)}${l.fields.BUT_demande ? " (" + l.fields.BUT_demande + ")" : ""}` : "→ le prochain dossier déposé";
+  } catch (e) { aide.textContent = ""; }
+}
+$("r_ligne").addEventListener("input", majNomLigne);
+$("r_doc").addEventListener("change", () => { lignesCache = null; majNomLigne(); });
 
 function afficherBilan(b, titre) {
   const liste = (t, l) => l && l.length ? `<b>${t} (${l.length})</b><br>${l.map(echapper).join("<br>")}<br>` : "";
@@ -48,22 +72,24 @@ function afficherBilan(b, titre) {
 
 async function enregistrerReosup() {
   const adresse = $("r_doc").value.trim();
-  let ligne = Number($("r_ligne").value) || 0;
-  const actif = $("r_actif").checked;
   const doc = idDocument(adresse);
-  if (actif && !ligne && doc) {
-    // par défaut : seuls les dossiers déposés après l'activation sont traités
-    const g = await reglages();
+  let numero = Number($("r_ligne").value) || 0;
+  let premierId = 0;
+  if (doc && (numero || $("r_actif").checked)) {
+    // numéro affiché -> identifiant interne ; vide : le prochain dossier déposé
     try {
-      const recs = (await appelGrist({ ...g, document: doc }, "GET", "/tables/REOSUP_CANDIDATS/records")).records;
-      ligne = Math.max(0, ...recs.map(x => x.id)) + 1;
-      $("r_ligne").value = ligne;
+      const lignes = await reosupLignes({ ...(await reglages()), document: doc });
+      if (!numero) { numero = lignes.length + 1; $("r_ligne").value = numero; }
+      premierId = reosupIdDepuisNumero(lignes, numero);
+      lignesCache = { doc, lignes };
     } catch (e) { $("r_resultat").innerHTML = `<div class="msg ko">${echapper(e.message)}</div>`; return false; }
   }
   await browser.storage.local.set({
     reosup_adresse: adresse, reosup_document: doc, reosup_expediteur: $("r_exp").value.trim(),
-    reosup_minutes: Math.max(1, Number($("r_min").value) || 5), reosup_premiere_ligne: ligne, reosup_actif: actif,
+    reosup_minutes: Math.max(1, Number($("r_min").value) || 5), reosup_premier_id: premierId, reosup_actif: $("r_actif").checked,
   });
+  await browser.storage.local.remove("reosup_premiere_ligne");
+  majNomLigne();
   return true;
 }
 

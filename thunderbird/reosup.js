@@ -5,8 +5,9 @@
 //   REOSUP_CANDIDATS  : NOM, PRENOM, EMAIL, BUT_demande, Date_de_depot_de_la_candidature, Emails_referents (« |a@x|b@y| »)
 //                       + Accuse_envoye_le, Referent_prevenu_le (créées par le module si absentes)
 //   REOSUP_FORMATIONS : Nom_de_la_formation, Adresse_mail (+ Invite_le, créée par le module si absente)
-// Seuls les candidats dont le n° de ligne est >= « première ligne à traiter » (réglages) sont traités : les dossiers
-// déjà présents à l'activation ne reçoivent rien.
+// « Première ligne à traiter » se saisit avec le numéro AFFICHÉ dans Grist (ordre de la table) ; le module l'enregistre sous
+// l'identifiant interne de la ligne, qui ne change jamais : supprimer ou trier des lignes ne fait pas repartir d'envois.
+// Les dossiers des lignes précédentes ne reçoivent rien.
 
 const REOSUP_LIEN_DOC = "https://grist.numerique.gouv.fr/o/docs/fNcACNZe239j/REOSUP-IUT";
 
@@ -51,13 +52,30 @@ const reosupMailValide = s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || "").
 const reosupDateFr = sec => sec ? new Date(sec * 1000).toLocaleDateString("fr-FR", { timeZone: "UTC" }) : "";
 const reosupMaintenant = () => Math.round(Date.now() / 1000);
 
+// Candidats dans l'ordre affiché par Grist : numéro affiché = position (1, 2, 3…)
+async function reosupLignes(r) {
+  const recs = (await appelGrist(r, "GET", "/tables/REOSUP_CANDIDATS/records?sort=manualSort")).records;
+  return recs.map((x, i) => ({ ...x, numero: i + 1 }));
+}
+const reosupNomCandidat = x => `${String(x.fields.PRENOM || "").trim()} ${String(x.fields.NOM || "").trim()}`.trim() || "(sans nom)";
+// numéro affiché -> identifiant interne (au-delà de la dernière ligne : le prochain dossier déposé)
+function reosupIdDepuisNumero(lignes, numero) {
+  if (numero >= 1 && numero <= lignes.length) return lignes[numero - 1].id;
+  return Math.max(0, ...lignes.map(x => x.id)) + 1;
+}
+// identifiant interne enregistré -> ligne affichée aujourd'hui (la première ligne encore présente à partir de cet identifiant)
+function reosupLigneDepuisId(lignes, id) {
+  const suivantes = lignes.filter(x => x.id >= id);
+  return suivantes.length ? suivantes.reduce((a, b) => (a.numero < b.numero ? a : b)) : null;
+}
+
 async function reosupReglages() {
   const g = await reglages();   // serveur et clé : ceux du module (grist.js)
   const r = await browser.storage.local.get(["reosup_document", "reosup_actif", "reosup_minutes", "reosup_premiere_ligne", "reosup_expediteur"]);
   return {
     serveur: g.serveur, cle: g.cle, document: r.reosup_document || "",
     actif: !!r.reosup_actif, minutes: Number(r.reosup_minutes) || 5,
-    premiereLigne: Number(r.reosup_premiere_ligne) || 0, expediteur: (r.reosup_expediteur || "").trim().toLowerCase(),
+    premierId: Number(r.reosup_premier_id) || 0, expediteur: (r.reosup_expediteur || "").trim().toLowerCase(),
   };
 }
 
@@ -92,7 +110,7 @@ async function reosupPassage({ apercu = false, force = false } = {}) {
   const r = await reosupReglages();
   if (!force && !r.actif) return null;
   if (!r.document || !r.cle) throw new Error("adresse du document REOSUP ou clé Grist manquante dans les réglages");
-  if (!r.premiereLigne) throw new Error("« première ligne à traiter » non renseignée dans les réglages");
+  if (!r.premierId) throw new Error("« première ligne à traiter » non renseignée dans les réglages");
   if (reosupEnCours) return null;
   reosupEnCours = true;
   const bilan = { date: new Date().toLocaleString("fr-FR"), apercu, accuses: [], referents: [], invitations: [], sansReferent: [], erreurs: [] };
@@ -102,14 +120,14 @@ async function reosupPassage({ apercu = false, force = false } = {}) {
       await reosupColonnes(r, "REOSUP_FORMATIONS", [["Invite_le", "Invité le"]]);
     }
     const [cand, form, acces] = await Promise.all([
-      appelGrist(r, "GET", "/tables/REOSUP_CANDIDATS/records"),
+      reosupLignes(r),
       appelGrist(r, "GET", "/tables/REOSUP_FORMATIONS/records"),
       appelGrist(r, "GET", "/access"),
     ]);
     const membres = new Set(acces.users.filter(u => u.access).map(u => String(u.email).toLowerCase()));
     const identite = apercu ? null : await reosupIdentite(r.expediteur);
-    const candidats = cand.records.filter(x => x.id >= r.premiereLigne).map(x => ({
-      id: x.id, nom: String(x.fields.NOM || "").trim(), prenom: String(x.fields.PRENOM || "").trim(),
+    const candidats = cand.filter(x => x.id >= r.premierId).map(x => ({
+      id: x.id, numero: x.numero, nom: String(x.fields.NOM || "").trim(), prenom: String(x.fields.PRENOM || "").trim(),
       email: String(x.fields.EMAIL || "").trim(), but: String(x.fields.BUT_demande || "").trim(),
       depot: reosupDateFr(x.fields.Date_de_depot_de_la_candidature),
       referents: String(x.fields.Emails_referents || "").split("|").map(s => s.trim().toLowerCase()).filter(Boolean),
@@ -118,20 +136,20 @@ async function reosupPassage({ apercu = false, force = false } = {}) {
 
     // 1) Accusé de réception au candidat
     for (const c of candidats.filter(c => !c.accuse && c.but)) {
-      if (!reosupMailValide(c.email)) { bilan.erreurs.push(`ligne ${c.id} : adresse du candidat invalide (${c.email || "vide"})`); continue; }
+      if (!reosupMailValide(c.email)) { bilan.erreurs.push(`ligne ${c.numero} (${c.prenom} ${c.nom}) : adresse du candidat invalide (${c.email || "vide"})`); continue; }
       try {
         if (!apercu) {
           await reosupEnvoyer(identite, c.email, mailAccuse(c));
           await appelGrist(r, "PATCH", "/tables/REOSUP_CANDIDATS/records", { records: [{ id: c.id, fields: { Accuse_envoye_le: reosupMaintenant() } }] });
         }
-        bilan.accuses.push(`ligne ${c.id} → ${c.email}`);
-      } catch (e) { bilan.erreurs.push(`accusé ligne ${c.id} : ${e.message}`); }
+        bilan.accuses.push(`ligne ${c.numero} (${c.prenom} ${c.nom}) → ${c.email}`);
+      } catch (e) { bilan.erreurs.push(`accusé ligne ${c.numero} : ${e.message}`); }
     }
 
     // 2) Référents : invitation Grist si besoin, puis un mail par référent listant ses nouveaux dossiers
     const parReferent = new Map();
     for (const c of candidats.filter(c => !c.prevenu && c.but)) {
-      if (!c.referents.length) { bilan.sansReferent.push(`ligne ${c.id} (${c.but})`); continue; }
+      if (!c.referents.length) { bilan.sansReferent.push(`ligne ${c.numero} (${c.prenom} ${c.nom}, ${c.but})`); continue; }
       for (const a of c.referents) { if (!parReferent.has(a)) parReferent.set(a, []); parReferent.get(a).push(c); }
     }
     const prevenus = new Map();   // id candidat -> nb de référents restant à prévenir
@@ -149,7 +167,7 @@ async function reosupPassage({ apercu = false, force = false } = {}) {
           await reosupEnvoyer(identite, a, mailReferent(liste, invite));
         }
         if (invite) bilan.invitations.push(a);
-        bilan.referents.push(`${a} : ${liste.length} dossier(s) (lignes ${liste.map(c => c.id).join(", ")})`);
+        bilan.referents.push(`${a} : ${liste.length} dossier(s) (ligne${liste.length > 1 ? "s" : ""} ${liste.map(c => c.numero).join(", ")})`);
         for (const c of liste) prevenus.set(c.id, prevenus.get(c.id) - 1);
       } catch (e) { bilan.erreurs.push(`référent ${a} : ${e.message}`); }
     }
