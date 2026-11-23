@@ -31,3 +31,17 @@ browser.messageDisplayAction.onClicked.addListener(async tab => {
   fenetre = w.id;
 });
 browser.windows.onRemoved.addListener(id => { if (id === fenetre) fenetre = null; });
+
+// REOSUP IUT : passage automatique (reosup.js) toutes les N minutes, et à la demande depuis les réglages
+async function reosupProgrammer() {
+  const r = await reosupReglages();
+  await browser.alarms.clear("reosup");
+  if (r.actif) browser.alarms.create("reosup", { delayInMinutes: 1, periodInMinutes: Math.max(1, r.minutes) });
+}
+browser.alarms.onAlarm.addListener(a => { if (a.name === "reosup") reosupPassage().catch(() => null); });
+browser.storage.onChanged.addListener(ch => { if (ch.reosup_actif || ch.reosup_minutes) reosupProgrammer(); });
+browser.runtime.onMessage.addListener(m => {
+  if (m && m.reosup === "apercu") return reosupPassage({ apercu: true, force: true }).catch(e => ({ erreurs: [e.message] }));
+  if (m && m.reosup === "envoyer") return reosupPassage({ force: true }).catch(e => ({ erreurs: [e.message] }));
+});
+reosupProgrammer();

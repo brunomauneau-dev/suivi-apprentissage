@@ -12,6 +12,25 @@
 <input id="serveur" placeholder="https://grist.numerique.gouv.fr"></details>
 <button class="btn" id="enregistrer">Enregistrer et tester</button>
 <div id="resultat"></div>
+<h1 style="margin-top:22px">REOSUP IUT — envois automatiques</h1>
+<div class="aide">Accusé de réception au candidat, invitation Grist et mail « nouveau dossier » au référent du BUT.
+Les mails partent de Thunderbird (visibles dans vos « Envoyés »), seulement quand Thunderbird est ouvert. La clé Grist est celle ci-dessus.</div>
+<label for="r_doc">Adresse du document REOSUP-IUT</label>
+<input id="r_doc" placeholder="https://grist.numerique.gouv.fr/o/docs/…/REOSUP-IUT">
+<div class="ligne">
+  <div><label for="r_exp">Adresse d'envoi (identité Thunderbird)</label><input id="r_exp" placeholder="prenom.nom@ac-bordeaux.fr"></div>
+  <div><label for="r_min">Vérifier toutes les (minutes)</label><input id="r_min" type="number" min="1" value="5"></div>
+</div>
+<label for="r_ligne">Première ligne à traiter (numéro affiché à gauche dans Grist)</label>
+<input id="r_ligne" type="number" min="1">
+<div class="connu" id="r_ligne_nom"></div>
+<div class="aide">Les candidats des lignes au-dessus ne reçoivent rien. Laissez vide : le prochain dossier déposé sera le premier traité.
+Supprimer ou trier des lignes ensuite ne change rien : le module retient le dossier, pas le numéro.</div>
+<label style="display:flex;gap:6px;align-items:center;font-weight:600"><input id="r_actif" type="checkbox" style="width:auto"> Activer les envois automatiques</label>
+<button class="btn" id="r_enregistrer">Enregistrer</button>
+<div class="ligne"><button class="btn" id="r_apercu" style="background:#4b5563">Aperçu (sans rien envoyer)</button><button class="btn" id="r_envoyer" style="background:#1a6b3c">Envoyer maintenant</button></div>
+<div id="r_resultat"></div>
 <script src="grist.js"></script>
+<script src="reosup.js"></script>
 <script src="options.js"></script>
 </body></html>

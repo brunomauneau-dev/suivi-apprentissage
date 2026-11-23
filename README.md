@@ -80,6 +80,19 @@ Le formulaire s'ouvre dans une petite fenêtre séparée (version 1.4) : elle re
 un téléphone ou une adresse ; un nouveau clic sur le bouton la remplace par celle du mail affiché.
 Installation : Thunderbird → Modules et thèmes → roue dentée → « Installer un module depuis un fichier… » → le fichier .xpi.
 
+### REOSUP IUT : accusés de réception et référents (version 1.6.1)
+
+Le module surveille aussi le document Grist *REOSUP-IUT* (réglages du module → section « REOSUP IUT »), toutes les N minutes tant que Thunderbird est ouvert.
+Pour chaque nouveau candidat ayant choisi un BUT, à partir de la « première ligne à traiter » (numéro affiché à gauche dans Grist ;
+le module retient le dossier correspondant, si bien que supprimer ou trier des lignes ensuite ne relance aucun envoi) :
+- **accusé de réception** envoyé au candidat → colonne `Accuse_envoye_le` ;
+- **référent du BUT** (table REOSUP UTILISATEURS) : invitation Grist en éditeur s'il n'a pas encore accès (colonne `Invite_le`),
+  puis un mail « nouveau(x) dossier(s) » regroupant ses candidats → colonne `Referent_prevenu_le`.
+
+Les colonnes sont créées au premier envoi. Les mails partent de l'identité Thunderbird choisie et restent dans « Envoyés ».
+« Aperçu » liste ce qui serait envoyé sans rien envoyer ni écrire. Textes des mails : `mailAccuse` et `mailReferent` dans `thunderbird/reosup.js`.
+Un BUT sans référent reste en attente (signalé dans le bilan).
+
 ## À faire
 
 - Formulaire de fiche : ajouter dans le libellé de la case « Je certifie avoir pris connaissance de la charte Parcoursup » un lien vers la charte 2027, dès sa publication.
