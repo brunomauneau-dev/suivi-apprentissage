@@ -1180,8 +1180,11 @@ function voirFiche(id) {
     <h3>Comparaison avec l'export Carif-Oref</h3>
     ${comp ? `<table class="comp"><tr><th></th><th>Fiche</th><th>Export Carif-Oref</th><th></th></tr>
       ${comp.map(([l, a, b, eg]) => `<tr><td>${esc(l)}</td><td>${esc(a)}</td><td>${esc(b)}</td><td>${ok(eg)}</td></tr>`).join("")}</table>
-      <p class="rien">Formation trouvée : ${esc(c.Libelle_formation)} — ${esc(c.Formateur_RS)} (${esc(c.Ville)}) · catalogue général : ${esc(c.Statut_catalogue)}</p>`
-      : `<p class="rien">${CATALOGUE.length ? "Formation non trouvée dans l'export : vérifier les codes (SIRET, UAI, RNCP, code diplôme) ou la déclaration au Carif-Oref." : "Aucun export Carif-Oref importé."}</p>`}
+      <p class="rien">Formation trouvée : ${esc(c.Libelle_formation)} — ${esc(c.Formateur_RS)} (${esc(c.Ville)}) · catalogue général : ${esc(c.Statut_catalogue)}
+        · <button class="btn-lien" data-lignes="${esc(c.Cle_ME)}">Lignes de l'export ▸</button>
+        · <button class="btn-lien" id="fiche-rappro" title="Si la formation retrouvée n'est pas la bonne">changer la formation de l'export</button></p>`
+      : `<p class="rien">${CATALOGUE.length ? `Formation non trouvée dans l'export : vérifier les codes (SIRET, UAI, RNCP, code diplôme) ou la déclaration au Carif-Oref.
+        <button class="btn-lien" id="fiche-rappro">Retrouver dans l'export</button>` : "Aucun export Carif-Oref importé."}</p>`}
     <h3>Ma vérification</h3>
     <p class="rien">${c ? "UAI et RNCP sont cochés automatiquement à partir de l'export Carif-Oref ; cliquez ci-dessous seulement pour modifier." : "Formation non retrouvée dans l'export : vérification manuelle."}
       ${fi.UAI_lieu || fi.UAI_formateur ? `<button class="btn-lien" id="acce">Vérifier l'UAI ${esc(code(fi.UAI_lieu || fi.UAI_formateur))} dans ACCE ↗</button>` : ""}</p>
@@ -1205,6 +1208,10 @@ function voirFiche(id) {
     await maj(id, champs);
     voirFiche(id);
   }));
+  // lignes du fichier Excel de la formation retrouvée, et choix d'une autre formation de l'export
+  pop.querySelectorAll("[data-lignes]").forEach(b => b.addEventListener("click", ev => { ev.stopPropagation(); basculerLignes(b); }));
+  const fr = document.getElementById("fiche-rappro");
+  if (fr) fr.addEventListener("click", ev => { ev.stopPropagation(); rapprocher(id); });
 }
 
 // ------------------------------------------------------------------ import de l'export Carif-Oref
