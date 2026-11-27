@@ -11,6 +11,11 @@ données : table *Fiches*, accès : **accès complet au document**.
 
 Hors de Grist, la page s'affiche en mode démonstration (données fictives).
 
+## Manuel
+
+Manuel d'utilisation et guide de portage vers une autre académie : [`docs/manuel.pdf`](docs/manuel.pdf)
+(captures du mode démonstration, données fictives).
+
 ## Export PDF
 
 Le bouton « ⤓ PDF » (à côté de la recherche) télécharge le tableau de l'onglet affiché en A4 paysage,
